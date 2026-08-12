@@ -1,17 +1,17 @@
 ﻿; FlowCC 安装包脚本（Inno Setup 6）
 ; 编译：ISCC.exe installer\flowcc.iss
-; 产物：release\FlowCC-Setup-1.1.0.exe（下一步式安装向导，免管理员权限）
+; 产物：release\FlowCC-Setup-1.5.1.exe（下一步式安装向导，免管理员权限）
 
 [Setup]
 AppName=FlowCC
-AppVersion=1.5.0
-AppVerName=FlowCC 1.5.0
+AppVersion=1.5.1
+AppVerName=FlowCC 1.5.1
 AppPublisher=FlowCC
-VersionInfoVersion=1.5.0.0
+VersionInfoVersion=1.5.1.0
 DefaultDirName={autopf}\FlowCC
 DefaultGroupName=FlowCC
 OutputDir=..\release
-OutputBaseFilename=FlowCC-Setup-1.5.0
+OutputBaseFilename=FlowCC-Setup-1.5.1
 SetupIconFile=..\flowcc.ico
 UninstallDisplayIcon={app}\flowcc.ico
 UninstallDisplayName=FlowCC

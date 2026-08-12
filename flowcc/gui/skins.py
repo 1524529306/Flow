@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import sys
 from pathlib import Path
@@ -14,6 +15,8 @@ from PIL import Image, ImageDraw
 
 from . import skin_processor
 from .widget_art import W, H, ModernFanArt
+
+logger = logging.getLogger(__name__)
 
 CLASSIC = ("classic", "经典渲染")
 BUILTIN = [
@@ -144,9 +147,41 @@ class SkinManager:
             src = self._source_of(skin_id)
             if src is None:
                 return ModernFanArt()
-            skin_processor.process_skin(src, user_skin_dir() / f"{skin_id}.png",
-                                        meta_path)
+            png_path = user_skin_dir() / f"{skin_id}.png"
+            try:
+                skin_processor.process_skin(src, png_path, meta_path)
+            except ValueError as exc:
+                # 内置皮肤源图可能「白主体+浅灰底」太接近无法识别，
+                # 或主体太小；静默回退到经典渲染，不影响使用。
+                logger.warning("皮肤 %s 处理失败: %s，回退到经典渲染",
+                               skin_id, exc)
+                return ModernFanArt()
+            # 内置皮肤额外做一次质量检查：去背景过度导致主体残缺时也回退
+            if self._is_builtin(skin_id) and not self._check_skin_quality(png_path):
+                logger.warning("内置皮肤 %s 处理结果不佳（主体像素过少），"
+                               "回退到经典渲染", skin_id)
+                png_path.unlink(missing_ok=True)
+                meta_path.unlink(missing_ok=True)
+                return ModernFanArt()
         return ImageSkinArt(json.loads(meta_path.read_text(encoding="utf-8")))
+
+    @staticmethod
+    def _is_builtin(skin_id: str) -> bool:
+        return any(sid == skin_id for sid, _, _ in BUILTIN)
+
+    @staticmethod
+    def _check_skin_quality(png_path: Path, min_keep_ratio: float = 0.25) -> bool:
+        """处理后 PNG 的不透明像素占比，太低说明去背景过度。"""
+        try:
+            img = Image.open(png_path).convert("RGBA")
+            alpha = img.split()[3]
+            hist = alpha.histogram()
+            total = img.size[0] * img.size[1]
+            if not total:
+                return False
+            return hist[255] / total >= min_keep_ratio
+        except Exception:
+            return False
 
     @staticmethod
     def _source_of(skin_id: str) -> Path | None:
