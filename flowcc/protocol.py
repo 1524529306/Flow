@@ -1,18 +1,19 @@
-"""FlowCC 串口通信协议 v1。
+"""FlowCC 串口通信协议 v1.1。
 
 设计原则：ASCII 行协议，LF(\n) 结尾，人类可读，可直接用任意串口助手调试。
 
 主机(软件) -> 设备(固件):
     PWR <0|1>      设置电源
     SPD <1..3>     设置风速档位
-    OSC <0|1>      设置摇头
+    OSC <0|1>      设置自动摇头
+    ANG <0..180>   手动摆头角度（v1.1 新增；执行后自动摇头关闭）
     STATE?         查询状态
     PING           心跳
 
 设备(固件) -> 主机(软件):
     OK <CMD>                命令执行成功
     ERR <CMD> <CODE>        命令执行失败, CODE: BADARG / UNSUPPORTED / INTERNAL
-    STATE pwr=<0|1> spd=<1..3> osc=<0|1>   状态上报（执行命令后自动上报）
+    STATE pwr=<0|1> spd=<1..3> osc=<0|1> ang=<0..180>   状态上报（执行命令后自动上报）
     PONG                    心跳回复
     HELLO FLOWCC <版本>      设备上电/复位后的问候帧
 """
@@ -22,15 +23,19 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-PROTOCOL_VERSION = "1.0"
+PROTOCOL_VERSION = "1.1"
 
 SPEED_MIN = 1
 SPEED_MAX = 3
+ANGLE_MIN = 0
+ANGLE_MAX = 180
+ANGLE_CENTER = 90
 DEFAULT_BAUD = 115200
 
 CMD_POWER = "PWR"
 CMD_SPEED = "SPD"
 CMD_OSC = "OSC"
+CMD_ANGLE = "ANG"
 CMD_QUERY = "STATE?"
 CMD_PING = "PING"
 
@@ -55,12 +60,14 @@ class FanState:
     power: bool = False
     speed: int = SPEED_MIN
     oscillation: bool = False
+    angle: int = ANGLE_CENTER
 
     def encode_payload(self) -> str:
-        return "pwr=%d spd=%d osc=%d" % (
+        return "pwr=%d spd=%d osc=%d ang=%d" % (
             1 if self.power else 0,
             self.speed,
             1 if self.oscillation else 0,
+            self.angle,
         )
 
 
@@ -99,6 +106,13 @@ def encode_oscillation(on: bool) -> str:
     return encode_command(CMD_OSC, 1 if on else 0)
 
 
+def encode_angle(degrees: int) -> str:
+    degrees = int(degrees)
+    if not ANGLE_MIN <= degrees <= ANGLE_MAX:
+        raise ValueError(f"角度必须在 {ANGLE_MIN}~{ANGLE_MAX} 之间: {degrees}")
+    return encode_command(CMD_ANGLE, degrees)
+
+
 def encode_query() -> str:
     return encode_command(CMD_QUERY)
 
@@ -123,10 +137,14 @@ def parse_state_payload(payload: str) -> FanState:
     speed = int(fields["spd"])
     if not SPEED_MIN <= speed <= SPEED_MAX:
         raise ValueError(f"非法档位: {speed}")
+    angle = int(fields.get("ang", ANGLE_CENTER))
+    if not ANGLE_MIN <= angle <= ANGLE_MAX:
+        raise ValueError(f"非法角度: {angle}")
     return FanState(
         power=fields["pwr"] == "1",
         speed=speed,
         oscillation=fields["osc"] == "1",
+        angle=angle,
     )
 
 

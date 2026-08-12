@@ -54,5 +54,9 @@ class FanDevice(abc.ABC):
         """设置摇头开关，返回执行后的设备状态。"""
 
     @abc.abstractmethod
+    def set_angle(self, degrees: int) -> FanState:
+        """手动摆头到指定角度（0~180），返回执行后的设备状态。"""
+
+    @abc.abstractmethod
     def query_state(self) -> FanState:
         """查询当前状态（同时充当心跳探活）。"""

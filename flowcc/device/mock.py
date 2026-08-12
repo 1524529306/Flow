@@ -9,7 +9,7 @@ import threading
 import time
 from typing import Optional
 
-from ..protocol import SPEED_MAX, SPEED_MIN, FanState
+from ..protocol import ANGLE_MAX, ANGLE_MIN, SPEED_MAX, SPEED_MIN, FanState
 from .base import DeviceError, FanDevice
 
 
@@ -58,6 +58,13 @@ class MockFanDevice(FanDevice):
 
     def set_oscillation(self, on: bool) -> FanState:
         return self._mutate(oscillation=bool(on))
+
+    def set_angle(self, degrees: int) -> FanState:
+        # 与固件语义一致：手动摆头即退出自动摇头
+        degrees = int(degrees)
+        if not ANGLE_MIN <= degrees <= ANGLE_MAX:
+            raise DeviceError(f"非法角度: {degrees}")
+        return self._mutate(angle=degrees, oscillation=False)
 
     def query_state(self) -> FanState:
         with self._lock:

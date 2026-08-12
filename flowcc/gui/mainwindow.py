@@ -93,7 +93,18 @@ class MainWindow:
         self._build_ui()
         self._apply_device_mode(self._ui_device_mode, initial=True)
         self._poll()
-        root.protocol("WM_DELETE_WINDOW", self.request_close)
+        # v1.1：控制中心为兜底窗口，关闭=隐藏；真正退出走挂件右键菜单
+        root.protocol("WM_DELETE_WINDOW", self.hide_window)
+
+    def hide_window(self) -> None:
+        """隐藏控制中心（桌面挂件仍在运行）。"""
+        self.root.withdraw()
+
+    def show_window(self) -> None:
+        """从桌面挂件右键菜单打开控制中心。"""
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
 
     # ------------------------------------------------------------------ UI
     def _card(self, parent: tk.Widget, title: str) -> tk.Frame:
@@ -495,6 +506,7 @@ class MainWindow:
             "baud": int(self.baud_var.get() or DEFAULT_BAUD),
             "speed": snap.speed if snap else self.config.get("speed", 2),
             "oscillation": snap.oscillation if snap else False,
+            "angle": snap.angle if snap else self.config.get("angle", 90),
             "mode": snap.mode if snap else MODE_NORMAL,
         }
         try:

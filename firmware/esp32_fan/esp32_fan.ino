@@ -1,9 +1,9 @@
 /*
- * FlowCC ESP32 参考固件 v1.0
+ * FlowCC ESP32 参考固件 v1.1
  * ---------------------------
- * 与 FlowCC 桌面软件的「串口协议 v1」完全对应：
- *   主机 -> 设备: PWR 0/1 | SPD 1..3 | OSC 0/1 | STATE? | PING
- *   设备 -> 主机: OK <CMD> | ERR <CMD> <CODE> | STATE pwr=x spd=x osc=x | PONG | HELLO FLOWCC 1.0
+ * 与 FlowCC 桌面软件的「串口协议 v1.1」完全对应：
+ *   主机 -> 设备: PWR 0/1 | SPD 1..3 | OSC 0/1 | ANG 0..180 | STATE? | PING
+ *   设备 -> 主机: OK <CMD> | ERR <CMD> <CODE> | STATE pwr=x spd=x osc=x ang=x | PONG | HELLO FLOWCC 1.1
  *   串口参数: 115200 8N1，行结尾 \n
  *
  * 硬件接线（以 ESP32 DevKit V1 为例）:
@@ -20,7 +20,7 @@
  *   - 档位 -> PWM 占空比映射见 SPEED_DUTY，可按实际风扇调整
  */
 
-const char FW_VERSION[] = "1.0";
+const char FW_VERSION[] = "1.1";
 
 // ---- 引脚与参数 ----
 const int FAN_PWM_PIN   = 25;
@@ -39,6 +39,7 @@ const int SPEED_DUTY[4] = {0, 100, 175, 255};
 bool  g_power = false;
 int   g_speed = 1;      // 1..3
 bool  g_osc   = false;
+int   g_angle = 90;       // 手动摆头目标角度 0..180
 int   g_servo_pos   = 90;   // 0..180
 int   g_servo_dir   = 1;
 unsigned long g_last_servo_ms = 0;
@@ -65,7 +66,9 @@ void reportState() {
   Serial.print(" spd=");
   Serial.print(g_speed);
   Serial.print(" osc=");
-  Serial.println(g_osc ? 1 : 0);
+  Serial.print(g_osc ? 1 : 0);
+  Serial.print(" ang=");
+  Serial.println(g_angle);
 }
 
 void handleCommand(String line) {
@@ -115,6 +118,18 @@ void handleCommand(String line) {
     reportState();
     return;
   }
+  if (cmd == "ANG") {
+    int deg = arg.toInt();
+    if (deg < 0 || deg > 180 || String(deg) != arg) {
+      Serial.println("ERR ANG BADARG");
+      return;
+    }
+    g_osc = false;      // 手动摆头即退出自动摇头
+    g_angle = deg;
+    Serial.println("OK ANG");
+    reportState();
+    return;
+  }
   Serial.print("ERR ");
   Serial.print(cmd);
   Serial.println(" UNSUPPORTED");
@@ -126,10 +141,10 @@ void tickServo() {
   if (now - g_last_servo_ms < SERVO_STEP_MS) return;
   g_last_servo_ms = now;
   if (!g_osc) {
-    if (g_servo_pos != 90) {       // 停止摇头时回中
-      g_servo_pos = 90;
-      writeServo(g_servo_pos);
-    }
+    if (g_servo_pos == g_angle) return;   // 已到位
+    if (g_servo_pos < g_angle) g_servo_pos++;
+    else g_servo_pos--;
+    writeServo(g_servo_pos);
     return;
   }
   g_servo_pos += g_servo_dir;

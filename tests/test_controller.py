@@ -78,6 +78,16 @@ class TestControllerWithMock(unittest.TestCase):
         self.controller.set_oscillation(False)
         self.assertTrue(wait_until(lambda: not self.snap().oscillation))
 
+    def test_manual_angle_stops_oscillation(self):
+        self.controller.set_oscillation(True)
+        self.assertTrue(wait_until(lambda: self.snap().oscillation))
+        self.controller.set_angle(30)
+        self.assertTrue(wait_until(lambda: self.snap().angle == 30))
+        self.assertFalse(self.snap().oscillation)
+        # 越界值会被夹取到合法范围
+        self.controller.set_angle(999)
+        self.assertTrue(wait_until(lambda: self.snap().angle == 180))
+
     def test_timer_turns_power_off(self):
         self.controller.set_power(True)
         self.assertTrue(wait_until(lambda: self.snap().power))

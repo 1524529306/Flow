@@ -15,6 +15,7 @@ DEFAULTS: Dict[str, Any] = {
     "baud": 115200,
     "speed": 2,
     "oscillation": False,
+    "angle": 90,
     "mode": "normal",
 }
 

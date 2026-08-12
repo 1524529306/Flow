@@ -22,7 +22,14 @@ from typing import Callable, Optional
 from .device.base import DeviceError, FanDevice
 from .device.mock import MockFanDevice
 from .device.serialdev import SerialFanDevice
-from .protocol import DEFAULT_BAUD, SPEED_MAX, SPEED_MIN
+from .protocol import (
+    ANGLE_CENTER,
+    ANGLE_MAX,
+    ANGLE_MIN,
+    DEFAULT_BAUD,
+    SPEED_MAX,
+    SPEED_MIN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +73,7 @@ class Snapshot:
     power: bool
     speed: int                 # 用户设定档位
     oscillation: bool
+    angle: int                 # 摆头角度 0~180（自动摇头时由设备扫动）
     mode: str
     active_speed: Optional[int]     # 实际输出档位（模式引擎可能调整）
     timer_remaining: Optional[float]
@@ -90,6 +98,7 @@ class FanController:
         self._power = False
         self._speed = 2
         self._oscillation = False
+        self._angle = ANGLE_CENTER
         self._mode = MODE_NORMAL
         self._active_speed: Optional[int] = None
 
@@ -162,23 +171,26 @@ class FanController:
             self._poll_fails = 0
             self._error = None
             self._next_poll = time.monotonic() + POLL_INTERVAL
-            target = (self._speed, self._oscillation, self._power, self._mode)
+            target = (self._speed, self._angle, self._oscillation,
+                      self._power, self._mode)
         if old is not None:
             old.disconnect()
-        speed, osc, power, mode = target
-        self._push_state_to_device(speed, osc, power)
+        speed, angle, osc, power, mode = target
+        self._push_state_to_device(speed, angle, osc, power)
         with self._lock:
             self._sleep_started = time.monotonic() if power else None
             self._active_speed = speed if power else None
             self._next_mode_at = 0.0
             logger.info("设备已挂接: %s", device.label)
 
-    def _push_state_to_device(self, speed: int, osc: bool, power: bool) -> None:
+    def _push_state_to_device(self, speed: int, angle: int, osc: bool,
+                              power: bool) -> None:
         device = self._device
         if device is None:
             return
         try:
             device.set_speed(speed)
+            device.set_angle(angle)
             device.set_oscillation(osc)
             device.set_power(power)
         except DeviceError as exc:
@@ -200,6 +212,10 @@ class FanController:
     def set_oscillation(self, on: bool) -> None:
         self._post(self._do_set_oscillation, bool(on))
 
+    def set_angle(self, degrees: int) -> None:
+        """手动摆头（0~180）。会隐式关闭自动摇头。"""
+        self._post(self._do_set_angle, int(degrees))
+
     def set_mode(self, mode: str) -> None:
         if mode not in MODE_LABELS:
             raise ValueError(f"未知模式: {mode}")
@@ -211,7 +227,8 @@ class FanController:
 
     def apply_preset(self, speed: Optional[int] = None,
                      oscillation: Optional[bool] = None,
-                     mode: Optional[str] = None) -> None:
+                     mode: Optional[str] = None,
+                     angle: Optional[int] = None) -> None:
         """启动时用配置预热状态（不改变电源）。"""
         with self._lock:
             if speed is not None and SPEED_MIN <= speed <= SPEED_MAX:
@@ -220,6 +237,8 @@ class FanController:
                 self._oscillation = bool(oscillation)
             if mode in MODE_LABELS:
                 self._mode = mode  # type: ignore[assignment]
+            if angle is not None and ANGLE_MIN <= angle <= ANGLE_MAX:
+                self._angle = angle
 
     def _post(self, fn: Callable, *args) -> None:
         self._jobs.put((fn, args))
@@ -305,6 +324,21 @@ class FanController:
         try:
             state = device.set_oscillation(on)
             with self._lock:
+                self._oscillation = state.oscillation
+                self._error = None
+        except DeviceError as exc:
+            with self._lock:
+                self._error = str(exc)
+
+    def _do_set_angle(self, degrees: int) -> None:
+        degrees = max(ANGLE_MIN, min(ANGLE_MAX, int(degrees)))
+        device = self._device_or_none()
+        if device is None:
+            return
+        try:
+            state = device.set_angle(degrees)
+            with self._lock:
+                self._angle = state.angle
                 self._oscillation = state.oscillation
                 self._error = None
         except DeviceError as exc:
@@ -430,6 +464,7 @@ class FanController:
                 power=self._power,
                 speed=self._speed,
                 oscillation=self._oscillation,
+                angle=self._angle,
                 mode=self._mode,
                 active_speed=self._active_speed,
                 timer_remaining=remaining,

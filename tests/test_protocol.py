@@ -21,6 +21,24 @@ class TestEncode(unittest.TestCase):
         with self.assertRaises(ValueError):
             P.encode_speed(4)
 
+    def test_encode_angle(self):
+        self.assertEqual(P.encode_angle(0), "ANG 0\n")
+        self.assertEqual(P.encode_angle(90), "ANG 90\n")
+        self.assertEqual(P.encode_angle(180), "ANG 180\n")
+        with self.assertRaises(ValueError):
+            P.encode_angle(-1)
+        with self.assertRaises(ValueError):
+            P.encode_angle(181)
+
+    def test_parse_state_with_angle(self):
+        msg = P.parse_line("STATE pwr=1 spd=2 osc=0 ang=45")
+        self.assertEqual(msg.state.angle, 45)
+
+    def test_parse_state_v1_frame_without_angle(self):
+        # v1.0 固件的 STATE 帧不含 ang，应兼容并默认回中
+        msg = P.parse_line("STATE pwr=1 spd=2 osc=0")
+        self.assertEqual(msg.state.angle, P.ANGLE_CENTER)
+
 
 class TestParse(unittest.TestCase):
     def test_parse_ok(self):

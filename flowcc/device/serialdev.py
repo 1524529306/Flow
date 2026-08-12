@@ -16,6 +16,7 @@ from ..protocol import (
     Message,
     MessageKind,
     FanState,
+    encode_angle,
     encode_oscillation,
     encode_ping,
     encode_power,
@@ -118,6 +119,9 @@ class SerialFanDevice(FanDevice):
 
     def set_oscillation(self, on: bool) -> FanState:
         return self._transact(encode_oscillation(on), "OSC")
+
+    def set_angle(self, degrees: int) -> FanState:
+        return self._transact(encode_angle(degrees), "ANG")
 
     def query_state(self) -> FanState:
         return self._transact(encode_query(), CMD_QUERY)

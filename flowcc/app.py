@@ -9,6 +9,7 @@ from . import APP_NAME, __version__
 from .config import load_config, save_config
 from .controller import FanController
 from .gui.mainwindow import MainWindow
+from .gui.widget import FanWidget
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +30,18 @@ def main(argv=None) -> int:
         speed=config.get("speed"),
         oscillation=config.get("oscillation"),
         mode=config.get("mode"),
+        angle=config.get("angle"),
     )
     controller.start()
     controller.connect_mock()  # 启动默认进入模拟模式，保证无硬件也能立即使用
 
     root = tk.Tk()
     window = MainWindow(root, controller, config, on_close=save_config)
+    # v1.1：桌面挂件为主交互入口，控制中心默认隐藏、作为兜底配置
+    root.withdraw()
+    FanWidget(root, controller,
+              on_open_center=window.show_window,
+              on_quit=window.request_close)
     if args.smoke:
         root.after(2500, window.request_close)
     root.mainloop()
