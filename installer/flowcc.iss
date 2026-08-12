@@ -4,14 +4,14 @@
 
 [Setup]
 AppName=FlowCC
-AppVersion=1.3.0
-AppVerName=FlowCC 1.3.0
+AppVersion=1.4.0
+AppVerName=FlowCC 1.4.0
 AppPublisher=FlowCC
-VersionInfoVersion=1.3.0.0
+VersionInfoVersion=1.4.0.0
 DefaultDirName={autopf}\FlowCC
 DefaultGroupName=FlowCC
 OutputDir=..\release
-OutputBaseFilename=FlowCC-Setup-1.3.0
+OutputBaseFilename=FlowCC-Setup-1.4.0
 SetupIconFile=..\flowcc.ico
 UninstallDisplayIcon={app}\flowcc.ico
 UninstallDisplayName=FlowCC

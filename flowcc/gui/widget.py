@@ -16,12 +16,14 @@ from __future__ import annotations
 import math
 import time
 import tkinter as tk
+from tkinter import filedialog
 from typing import Callable, Optional
 
 from PIL import ImageTk
 
 from ..controller import FanController, Snapshot
 from ..protocol import ANGLE_CENTER, ANGLE_MAX, ANGLE_MIN, SPEED_MAX, SPEED_MIN
+from . import skins
 from .widget_art import HEAD_CX, HEAD_CY, HEAD_R, W, H, ModernFanArt
 
 # 透明窗的“魔法色”：画布背景用该色，再声明为透明，即得异形悬浮窗。
@@ -74,7 +76,9 @@ class FanWidget:
         self.canvas.pack()
 
         # 视觉引擎与图像缓冲（PhotoImage.paste 复用，避免每帧重建）
-        self._art = ModernFanArt()
+        self._skin_mgr = skins.SkinManager()
+        self._skin_id = skins.load_skin_choice()
+        self._art = self._skin_mgr.get_art(self._skin_id)
         self._photo = ImageTk.PhotoImage(self._art.compose(0, 0, False))
         self.canvas.create_image(0, 0, anchor="nw", image=self._photo)
 
@@ -90,7 +94,49 @@ class FanWidget:
             pass  # 非 Windows 平台降级为普通窗口
 
         self._menu = tk.Menu(self.win, tearoff=0, font=("Microsoft YaHei UI", 10))
+        self._build_menu()
         self._tick()
+
+    def _build_menu(self) -> None:
+        self._menu.delete(0, "end")
+        snap = self._snap
+        self._menu.add_command(label="打开控制中心", command=self.on_open_center)
+        osc_label = "自动摇头：关" if (snap and snap.oscillation) else "自动摇头：开"
+        self._menu.add_command(
+            label=osc_label,
+            command=lambda: self.controller.set_oscillation(
+                not (snap.oscillation if snap else False)))
+        skin_menu = tk.Menu(self._menu, tearoff=0, font=("Microsoft YaHei UI", 10))
+        for sid, name in self._skin_mgr.list_skins():
+            label = f"✓ {name}" if sid == self._skin_id else name
+            skin_menu.add_command(label=label,
+                                  command=lambda s=sid: self._set_skin(s))
+        skin_menu.add_separator()
+        skin_menu.add_command(label="上传新皮肤…", command=self._upload_skin)
+        self._menu.add_cascade(label="皮肤", menu=skin_menu)
+        self._menu.add_separator()
+        self._menu.add_command(label="退出 FlowCC", command=self.on_quit)
+
+    def _set_skin(self, skin_id: str) -> None:
+        try:
+            self._art = self._skin_mgr.get_art(skin_id)
+        except Exception:
+            self._art = ModernFanArt()
+            skin_id = "classic"
+        self._skin_id = skin_id
+        skins.save_skin_choice(skin_id)
+
+    def _upload_skin(self) -> None:
+        path = filedialog.askopenfilename(
+            title="选择风扇皮肤图片",
+            filetypes=[("PNG 图片", "*.png"), ("所有文件", "*.*")])
+        if not path:
+            return
+        try:
+            skin_id = self._skin_mgr.import_skin(path)
+        except Exception:
+            return
+        self._set_skin(skin_id)
 
     # ---------------------------------------------------------------- 事件
     def _bind_events(self) -> None:
@@ -135,16 +181,7 @@ class FanWidget:
             self._toggle_power()
 
     def _on_right_click(self, _event) -> None:
-        snap = self._snap
-        osc_label = "自动摇头：关" if (snap and snap.oscillation) else "自动摇头：开"
-        self._menu.delete(0, "end")
-        self._menu.add_command(label="打开控制中心", command=self.on_open_center)
-        self._menu.add_command(
-            label=osc_label,
-            command=lambda: self.controller.set_oscillation(
-                not (snap.oscillation if snap else False)))
-        self._menu.add_separator()
-        self._menu.add_command(label="退出 FlowCC", command=self.on_quit)
+        self._build_menu()
         try:
             self._menu.tk_popup(self.win.winfo_pointerx(), self.win.winfo_pointery())
         finally:
