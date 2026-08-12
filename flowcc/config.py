@@ -13,6 +13,9 @@ DEFAULTS: Dict[str, Any] = {
     "device_mode": "mock",          # mock | serial
     "port": "",
     "baud": 115200,
+    "wifi_host": "",
+    "wifi_port": 3333,
+    "ble_address": "",
     "speed": 2,
     "oscillation": False,
     "angle": 90,

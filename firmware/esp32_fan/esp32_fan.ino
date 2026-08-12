@@ -1,10 +1,14 @@
 /*
- * FlowCC ESP32 参考固件 v1.1
+ * FlowCC ESP32 参考固件 v1.3
  * ---------------------------
  * 与 FlowCC 桌面软件的「串口协议 v1.1」完全对应：
  *   主机 -> 设备: PWR 0/1 | SPD 1..3 | OSC 0/1 | ANG 0..180 | STATE? | PING
- *   设备 -> 主机: OK <CMD> | ERR <CMD> <CODE> | STATE pwr=x spd=x osc=x ang=x | PONG | HELLO FLOWCC 1.1
- *   串口参数: 115200 8N1，行结尾 \n
+ *   设备 -> 主机: OK <CMD> | ERR <CMD> <CODE> | STATE pwr=x spd=x osc=x ang=x | PONG | HELLO FLOWCC 1.3
+ *
+ * 传输方式三选一（编译前修改 FLOWCC_TRANSPORT）：
+ *   SERIAL  USB 串口，115200 8N1
+ *   WIFI    TCP 服务，端口 3333（填写 WIFI_SSID / WIFI_PASS）
+ *   BLE     BLE NUS（Nordic UART Service），广播名 FlowCC
  *
  * 硬件接线（以 ESP32 DevKit V1 为例）:
  *   GPIO25 --[1kΩ 电阻]--> N 沟道 MOSFET 栅极（如 AO3400 / IRLZ44N）
@@ -20,7 +24,16 @@
  *   - 档位 -> PWM 占空比映射见 SPEED_DUTY，可按实际风扇调整
  */
 
-const char FW_VERSION[] = "1.1";
+#define SERIAL 0
+#define WIFI 1
+#define BLE 2
+
+#define FLOWCC_TRANSPORT SERIAL
+#define WIFI_SSID "your-ssid"
+#define WIFI_PASS "your-pass"
+#define TCP_PORT 3333
+
+const char FW_VERSION[] = "1.3";
 
 // ---- 引脚与参数 ----
 const int FAN_PWM_PIN   = 25;
@@ -39,13 +52,52 @@ const int SPEED_DUTY[4] = {0, 100, 175, 255};
 bool  g_power = false;
 int   g_speed = 1;      // 1..3
 bool  g_osc   = false;
-int   g_angle = 90;       // 手动摆头目标角度 0..180
+int   g_angle = 90;     // 手动摆头目标角度 0..180
 int   g_servo_pos   = 90;   // 0..180
 int   g_servo_dir   = 1;
 unsigned long g_last_servo_ms = 0;
 String g_line_buf;
 
-void serialEventRun(); // 前置声明
+void handleCommand(String line);  // 前置声明
+
+// ---- 传输层（按 FLOWCC_TRANSPORT 编译） ----
+#if FLOWCC_TRANSPORT == WIFI
+#include <WiFi.h>
+WiFiServer g_server(TCP_PORT);
+WiFiClient g_client;
+#elif FLOWCC_TRANSPORT == BLE
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#define NUS_SERVICE "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+#define NUS_RX      "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+#define NUS_TX      "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+BLECharacteristic *g_tx = nullptr;
+bool g_ble_connected = false;
+#endif
+
+void sendLine(const String &line) {
+#if FLOWCC_TRANSPORT == SERIAL
+  Serial.println(line);
+#elif FLOWCC_TRANSPORT == WIFI
+  if (g_client) g_client.println(line);
+#elif FLOWCC_TRANSPORT == BLE
+  if (g_ble_connected && g_tx) {
+    String out = line + "\n";
+    g_tx->setValue((uint8_t *)out.c_str(), out.length());
+    g_tx->notify();
+  }
+#endif
+}
+
+void feedChar(char c) {
+  if (c == '\n') {
+    String line = g_line_buf;
+    g_line_buf = "";
+    handleCommand(line);
+  } else if (c != '\r') {
+    if (g_line_buf.length() < 64) g_line_buf += c;
+  }
+}
 
 // ---- 输出控制 ----
 void applyFan() {
@@ -61,78 +113,52 @@ void writeServo(int pos) {
 }
 
 void reportState() {
-  Serial.print("STATE pwr=");
-  Serial.print(g_power ? 1 : 0);
-  Serial.print(" spd=");
-  Serial.print(g_speed);
-  Serial.print(" osc=");
-  Serial.print(g_osc ? 1 : 0);
-  Serial.print(" ang=");
-  Serial.println(g_angle);
+  String s = "STATE pwr=";
+  s += g_power ? 1 : 0;
+  s += " spd="; s += g_speed;
+  s += " osc="; s += g_osc ? 1 : 0;
+  s += " ang="; s += g_angle;
+  sendLine(s);
 }
 
 void handleCommand(String line) {
   line.trim();
   if (line.length() == 0) return;
 
-  // 分词
   int sp = line.indexOf(' ');
   String cmd = (sp < 0) ? line : line.substring(0, sp);
   String arg = (sp < 0) ? "" : line.substring(sp + 1);
   cmd.trim();
   arg.trim();
 
-  if (cmd == "PING") {
-    Serial.println("PONG");
-    return;
-  }
-  if (cmd == "STATE?") {
-    Serial.println("OK STATE?");
-    reportState();
-    return;
-  }
+  if (cmd == "PING") { sendLine("PONG"); return; }
+  if (cmd == "STATE?") { sendLine("OK STATE?"); reportState(); return; }
   if (cmd == "PWR") {
-    if (arg != "0" && arg != "1") { Serial.println("ERR PWR BADARG"); return; }
+    if (arg != "0" && arg != "1") { sendLine("ERR PWR BADARG"); return; }
     g_power = (arg == "1");
     applyFan();
-    Serial.println("OK PWR");
-    reportState();
-    return;
+    sendLine("OK PWR"); reportState(); return;
   }
   if (cmd == "SPD") {
     int level = arg.toInt();
-    if (level < 1 || level > 3 || String(level) != arg) {
-      Serial.println("ERR SPD BADARG");
-      return;
-    }
+    if (level < 1 || level > 3 || String(level) != arg) { sendLine("ERR SPD BADARG"); return; }
     g_speed = level;
     applyFan();
-    Serial.println("OK SPD");
-    reportState();
-    return;
+    sendLine("OK SPD"); reportState(); return;
   }
   if (cmd == "OSC") {
-    if (arg != "0" && arg != "1") { Serial.println("ERR OSC BADARG"); return; }
+    if (arg != "0" && arg != "1") { sendLine("ERR OSC BADARG"); return; }
     g_osc = (arg == "1");
-    Serial.println("OK OSC");
-    reportState();
-    return;
+    sendLine("OK OSC"); reportState(); return;
   }
   if (cmd == "ANG") {
     int deg = arg.toInt();
-    if (deg < 0 || deg > 180 || String(deg) != arg) {
-      Serial.println("ERR ANG BADARG");
-      return;
-    }
+    if (deg < 0 || deg > 180 || String(deg) != arg) { sendLine("ERR ANG BADARG"); return; }
     g_osc = false;      // 手动摆头即退出自动摇头
     g_angle = deg;
-    Serial.println("OK ANG");
-    reportState();
-    return;
+    sendLine("OK ANG"); reportState(); return;
   }
-  Serial.print("ERR ");
-  Serial.print(cmd);
-  Serial.println(" UNSUPPORTED");
+  sendLine("ERR " + cmd + " UNSUPPORTED");
 }
 
 // ---- 摇头 ----
@@ -153,29 +179,64 @@ void tickServo() {
   writeServo(g_servo_pos);
 }
 
+// ---- BLE 回调 ----
+#if FLOWCC_TRANSPORT == BLE
+class RxCallback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *c) override {
+    std::string v = c->getValue();
+    for (char ch : v) feedChar(ch);
+  }
+};
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer *) override { g_ble_connected = true; }
+  void onDisconnect(BLEServer *) override { g_ble_connected = false; }
+};
+#endif
+
 // ---- Arduino 入口 ----
 void setup() {
-  Serial.begin(115200);
   ledcAttach(FAN_PWM_PIN, PWM_FREQ, PWM_RES);    // ESP32 Arduino Core 3.x API
   ledcAttach(SERVO_PIN, SERVO_FREQ, SERVO_RES);  // 旧版核心请改用 ledcSetup + ledcAttachPin
   applyFan();
   writeServo(g_servo_pos);
+
+#if FLOWCC_TRANSPORT == SERIAL
+  Serial.begin(115200);
   delay(50);
-  Serial.print("HELLO FLOWCC ");
-  Serial.println(FW_VERSION);
+  sendLine(String("HELLO FLOWCC ") + FW_VERSION);
+#elif FLOWCC_TRANSPORT == WIFI
+  Serial.begin(115200);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) { delay(200); }
+  g_server.begin();
+  Serial.print("FlowCC WiFi IP: ");
+  Serial.println(WiFi.localIP());   // 串口监视器查看 IP，填入软件连接栏
+#elif FLOWCC_TRANSPORT == BLE
+  BLEDevice::init("FlowCC");
+  BLEServer *server = BLEDevice::createServer();
+  server->setCallbacks(new ServerCallbacks());
+  BLEService *svc = server->createService(NUS_SERVICE);
+  g_tx = svc->createCharacteristic(NUS_TX, BLECharacteristic::PROPERTY_NOTIFY);
+  BLECharacteristic *rx = svc->createCharacteristic(
+      NUS_RX, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+  rx->setCallbacks(new RxCallback());
+  svc->start();
+  BLEAdvertising *adv = server->getAdvertising();
+  adv->addServiceUUID(NUS_SERVICE);
+  adv->start();
+#endif
 }
 
 void loop() {
-  // 逐字节读取串口，拼行后处理（兼容 \n 与 \r\n）
-  while (Serial.available() > 0) {
-    char c = (char)Serial.read();
-    if (c == '\n') {
-      String line = g_line_buf;
-      g_line_buf = "";
-      handleCommand(line);
-    } else if (c != '\r') {
-      if (g_line_buf.length() < 64) g_line_buf += c;
-    }
+#if FLOWCC_TRANSPORT == SERIAL
+  while (Serial.available() > 0) feedChar((char)Serial.read());
+#elif FLOWCC_TRANSPORT == WIFI
+  if (!g_client || !g_client.connected()) {
+    g_client = g_server.available();   // 等待/接受新客户端
+    if (g_client) sendLine(String("HELLO FLOWCC ") + FW_VERSION);
+  } else {
+    while (g_client.available() > 0) feedChar((char)g_client.read());
   }
+#endif
   tickServo();
 }

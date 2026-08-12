@@ -47,7 +47,13 @@ FONT = ("Microsoft YaHei UI", 10)
 FONT_S = ("Microsoft YaHei UI", 9)
 FONT_L = ("Microsoft YaHei UI", 12, "bold")
 
-DEVICE_MODE_LABELS = ["模拟模式", "串口设备"]
+DEVICE_MODE_LABELS = ["模拟模式", "串口设备", "WiFi 设备", "蓝牙设备"]
+DEVICE_MODE_KEYS = {
+    "模拟模式": "mock",
+    "串口设备": "serial",
+    "WiFi 设备": "wifi",
+    "蓝牙设备": "ble",
+}
 TIMER_OPTIONS = [(0, "取消"), (30, "30 分钟"), (60, "1 小时"), (120, "2 小时")]
 BAUD_OPTIONS = ["9600", "19200", "57600", "115200"]
 
@@ -71,7 +77,9 @@ class MainWindow:
 
         self._last_snapshot: Optional[Snapshot] = None
         self._last_power_drawn: Optional[bool] = None
-        self._ui_device_mode = "serial" if config.get("device_mode") == "serial" else "mock"
+        saved_mode = config.get("device_mode", "mock")
+        self._ui_device_mode = saved_mode if saved_mode in DEVICE_MODE_KEYS.values() else "mock"
+        self._ble_devices: Dict[str, str] = {}
         self._ui_events: "queue.Queue[Tuple[str, Optional[str]]]" = queue.Queue()
         self._connect_thread: Optional[threading.Thread] = None
 
@@ -128,41 +136,76 @@ class MainWindow:
         row = tk.Frame(card, bg=CARD)
         row.grid(row=1, column=0, columnspan=20, sticky="ew", pady=(6, 0))
 
-        tk.Label(row, text="模式", bg=CARD, fg=TEXT, font=FONT).pack(side="left")
+        col = 0
+        tk.Label(row, text="模式", bg=CARD, fg=TEXT, font=FONT).grid(row=0, column=col)
+        col += 1
         self.device_mode_var = tk.StringVar(value=DEVICE_MODE_LABELS[0])
         self.combo_device_mode = ttk.Combobox(
             row, textvariable=self.device_mode_var, values=DEVICE_MODE_LABELS,
             state="readonly", width=9, font=FONT)
-        self.combo_device_mode.pack(side="left", padx=(6, 14))
+        self.combo_device_mode.grid(row=0, column=col, padx=(6, 14))
         self.combo_device_mode.bind("<<ComboboxSelected>>", self._on_device_mode)
+        col += 1
 
-        tk.Label(row, text="串口", bg=CARD, fg=TEXT, font=FONT).pack(side="left")
+        # 串口 / 蓝牙 共用的目标选择
+        self.lbl_target = tk.Label(row, text="串口", bg=CARD, fg=TEXT, font=FONT)
+        self.lbl_target.grid(row=0, column=col)
+        col += 1
         self.port_var = tk.StringVar(value=self.config.get("port", ""))
         self.combo_port = ttk.Combobox(row, textvariable=self.port_var,
-                                       width=10, font=FONT)
-        self.combo_port.pack(side="left", padx=(6, 4))
+                                       width=14, font=FONT)
+        self.combo_port.grid(row=0, column=col, padx=(6, 4))
+        col += 1
         self.btn_refresh = tk.Button(row, text="刷新", font=FONT_S, bd=0,
                                      bg="#eef2f7", fg=TEXT, padx=8, pady=3,
-                                     cursor="hand2", command=self._refresh_ports)
-        self.btn_refresh.pack(side="left", padx=(0, 14))
+                                     cursor="hand2", command=self._refresh_targets)
+        self.btn_refresh.grid(row=0, column=col, padx=(0, 14))
+        col += 1
 
-        tk.Label(row, text="波特率", bg=CARD, fg=TEXT, font=FONT).pack(side="left")
+        # 串口专用：波特率
+        self.lbl_baud = tk.Label(row, text="波特率", bg=CARD, fg=TEXT, font=FONT)
+        self.lbl_baud.grid(row=0, column=col)
+        col += 1
         self.baud_var = tk.StringVar(value=str(self.config.get("baud", DEFAULT_BAUD)))
         self.combo_baud = ttk.Combobox(row, textvariable=self.baud_var,
                                        values=BAUD_OPTIONS, state="readonly",
                                        width=7, font=FONT)
-        self.combo_baud.pack(side="left", padx=(6, 14))
+        self.combo_baud.grid(row=0, column=col, padx=(6, 14))
+        col += 1
+
+        # WiFi 专用：地址 + 端口
+        self.lbl_host = tk.Label(row, text="地址", bg=CARD, fg=TEXT, font=FONT)
+        self.lbl_host.grid(row=0, column=col)
+        col += 1
+        self.wifi_host_var = tk.StringVar(value=self.config.get("wifi_host", ""))
+        self.entry_host = ttk.Entry(row, textvariable=self.wifi_host_var,
+                                    width=14, font=FONT)
+        self.entry_host.grid(row=0, column=col, padx=(6, 4))
+        col += 1
+        self.lbl_wport = tk.Label(row, text="端口", bg=CARD, fg=TEXT, font=FONT)
+        self.lbl_wport.grid(row=0, column=col)
+        col += 1
+        self.wifi_port_var = tk.StringVar(value=str(self.config.get("wifi_port", 3333)))
+        self.entry_wport = ttk.Entry(row, textvariable=self.wifi_port_var,
+                                     width=5, font=FONT)
+        self.entry_wport.grid(row=0, column=col, padx=(6, 14))
+        col += 1
 
         self.btn_connect = tk.Button(row, text="连接", font=FONT, bd=0,
                                      bg=ACCENT, fg="white", padx=18, pady=4,
                                      cursor="hand2", command=self._on_connect)
-        self.btn_connect.pack(side="left")
+        self.btn_connect.grid(row=0, column=col)
+
+        self._serial_widgets = (self.lbl_target, self.combo_port, self.btn_refresh,
+                                self.lbl_baud, self.combo_baud)
+        self._wifi_widgets = (self.lbl_host, self.entry_host,
+                              self.lbl_wport, self.entry_wport)
+        self._ble_widgets = (self.lbl_target, self.combo_port, self.btn_refresh)
 
         self.lbl_conn_hint = tk.Label(card, text="", bg=CARD, fg=SUB,
                                       font=FONT_S, anchor="w")
         self.lbl_conn_hint.grid(row=2, column=0, columnspan=20, sticky="w",
                                 pady=(6, 0))
-        self._refresh_ports()
 
     def _build_fan(self, parent: tk.Widget) -> None:
         card = self._card(parent, "风扇控制")
@@ -298,23 +341,47 @@ class MainWindow:
         self.controller.set_timer_minutes(minutes)
 
     def _on_device_mode(self, _event=None) -> None:
-        label = self.device_mode_var.get()
-        mode = "mock" if label == "模拟模式" else "serial"
+        mode = DEVICE_MODE_KEYS.get(self.device_mode_var.get(), "mock")
+        if mode == "mock":
+            self.controller.connect_mock()
         self._apply_device_mode(mode)
 
     def _apply_device_mode(self, mode: str, initial: bool = False) -> None:
         self._ui_device_mode = mode
-        if mode == "mock":
-            self.controller.connect_mock()
-            self.lbl_conn_hint.configure(
-                text="模拟模式：内置虚拟风扇，无需硬件即可体验全部功能。")
-        else:
-            self.lbl_conn_hint.configure(
-                text="串口模式：将刷好固件的 ESP32 经 USB 连接后，点击「连接」。")
-            if not initial:
-                self._refresh_ports()
+        hints = {
+            "mock": "模拟模式：内置虚拟风扇，无需硬件即可体验全部功能。",
+            "serial": "串口模式：将刷好固件的 ESP32 经 USB 连接后，点击「连接」。",
+            "wifi": "WiFi 模式：固件以 TCP 服务监听（默认 3333），输入设备 IP 后连接。",
+            "ble": "蓝牙模式：点击「扫描」发现 FlowCC 设备后连接（需安装 bleak）。",
+        }
+        self.lbl_conn_hint.configure(text=hints[mode])
+        self._set_mode_visibility(mode)
+        if mode in ("serial", "ble") and not initial:
+            self._refresh_targets()
 
-    def _refresh_ports(self) -> None:
+    def _set_mode_visibility(self, mode: str) -> None:
+        visible = {
+            "mock": (),
+            "serial": self._serial_widgets,
+            "wifi": self._wifi_widgets,
+            "ble": self._ble_widgets,
+        }[mode]
+        for widget in set(self._serial_widgets) | set(self._wifi_widgets):
+            if widget in visible:
+                widget.grid()
+            else:
+                widget.grid_remove()
+        if mode == "serial":
+            self.lbl_target.configure(text="串口")
+            self.btn_refresh.configure(text="刷新")
+        elif mode == "ble":
+            self.lbl_target.configure(text="设备")
+            self.btn_refresh.configure(text="扫描")
+
+    def _refresh_targets(self) -> None:
+        if self._ui_device_mode == "ble":
+            self._scan_ble()
+            return
         ports: List[str] = []
         try:
             from serial.tools.list_ports import comports
@@ -333,6 +400,42 @@ class MainWindow:
             self.lbl_conn_hint.configure(
                 text="未发现串口：请插入设备并安装 USB 转串口驱动（如 CH340 / CP2102）。")
 
+    def _scan_ble(self) -> None:
+        self.btn_refresh.configure(state="disabled", text="扫描中…")
+
+        def _worker() -> None:
+            try:
+                from ..device.bledev import scan_ble_devices
+                devices = scan_ble_devices()
+            except Exception as exc:
+                self._ui_events.put(("ble_result", f"ERROR:{exc}"))
+                return
+            self._ui_events.put(("ble_result", devices))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_ble_result(self, payload) -> None:
+        self.btn_refresh.configure(state="normal", text="扫描",
+                                   bg="#eef2f7", fg=TEXT)
+        if isinstance(payload, str) and payload.startswith("ERROR:"):
+            self.lbl_conn_hint.configure(
+                text=f"蓝牙扫描失败：{payload[6:]}")
+            return
+        self._ble_devices = {}
+        labels = []
+        for address, name in payload:
+            label = f"{name or 'FlowCC'}（{address}）"
+            self._ble_devices[label] = address
+            labels.append(label)
+        self.combo_port.configure(values=labels)
+        if labels:
+            self.port_var.set(labels[0])
+            self.lbl_conn_hint.configure(text=f"发现 {len(labels)} 个 FlowCC 蓝牙设备。")
+        else:
+            self.port_var.set("")
+            self.lbl_conn_hint.configure(
+                text="未发现 FlowCC 蓝牙设备：请确认固件已开启 BLE 且设备在附近。")
+
     def _on_connect(self) -> None:
         if self._ui_device_mode == "mock":
             self.controller.connect_mock()
@@ -343,22 +446,50 @@ class MainWindow:
             return
         if snap and snap.connecting:
             return
-        port = self.port_var.get().strip()
-        if not port:
-            messagebox.showwarning(APP_NAME, "请先选择或输入串口。")
-            return
-        try:
-            baud = int(self.baud_var.get())
-        except ValueError:
-            baud = DEFAULT_BAUD
+
+        mode = self._ui_device_mode
+        if mode == "serial":
+            port = self.port_var.get().strip()
+            if not port:
+                messagebox.showwarning(APP_NAME, "请先选择或输入串口。")
+                return
+            try:
+                baud = int(self.baud_var.get())
+            except ValueError:
+                baud = DEFAULT_BAUD
+            target = ("serial", port, baud)
+        elif mode == "wifi":
+            host = self.wifi_host_var.get().strip()
+            if not host:
+                messagebox.showwarning(APP_NAME, "请输入设备 IP 地址。")
+                return
+            try:
+                port = int(self.wifi_port_var.get().strip() or 3333)
+            except ValueError:
+                port = 3333
+            target = ("wifi", host, port)
+        else:  # ble
+            selection = self.port_var.get().strip()
+            address = self._ble_devices.get(selection, "")
+            if not address:
+                messagebox.showwarning(APP_NAME, "请先扫描并选择蓝牙设备。")
+                return
+            target = ("ble", address)
+
         self._connect_thread = threading.Thread(
-            target=self._serial_worker, args=(port, baud), daemon=True)
+            target=self._connect_worker, args=(target,), daemon=True)
         self._connect_thread.start()
 
-    def _serial_worker(self, port: str, baud: int) -> None:
+    def _connect_worker(self, target: tuple) -> None:
         try:
-            self.controller.connect_serial(port, baud)
-            self._ui_events.put(("connected", port))
+            kind = target[0]
+            if kind == "serial":
+                self.controller.connect_serial(target[1], target[2])
+            elif kind == "wifi":
+                self.controller.connect_wifi(target[1], target[2])
+            else:
+                self.controller.connect_ble(target[1])
+            self._ui_events.put(("connected", kind))
         except Exception as exc:  # DeviceError 等
             self._ui_events.put(("error", str(exc)))
 
@@ -369,6 +500,8 @@ class MainWindow:
                 kind, payload = self._ui_events.get_nowait()
                 if kind == "error":
                     messagebox.showerror(APP_NAME, f"连接失败：\n{payload}")
+                elif kind == "ble_result":
+                    self._on_ble_result(payload)
         except queue.Empty:
             pass
 
@@ -459,38 +592,43 @@ class MainWindow:
         self._refresh_connect_controls(snap)
 
     def _refresh_connect_controls(self, snap: Snapshot) -> None:
-        serial_connected = snap.connected and snap.device_label != "模拟设备"
-        if self._ui_device_mode == "mock":
-            for widget in (self.combo_port, self.combo_baud):
-                widget.configure(state="disabled")
+        mode = self._ui_device_mode
+        label_for_mode = {v: k for k, v in DEVICE_MODE_KEYS.items()}[mode]
+        if self.device_mode_var.get() != label_for_mode:
+            self.device_mode_var.set(label_for_mode)
+
+        editable = {
+            "mock": (),
+            "serial": (self.combo_port, self.combo_baud),
+            "wifi": (self.entry_host, self.entry_wport),
+            "ble": (self.combo_port,),
+        }[mode]
+        real_connected = snap.connected and snap.device_label != "模拟设备"
+
+        if mode == "mock":
             self.btn_refresh.configure(state="disabled", bg="#f1f5f9", fg="#a8b3c0")
             self.btn_connect.configure(state="disabled", bg="#b8c4d0",
                                        text="模拟运行中")
-            if self.device_mode_var.get() != DEVICE_MODE_LABELS[0]:
-                self.device_mode_var.set(DEVICE_MODE_LABELS[0])
             return
 
-        if self.device_mode_var.get() != DEVICE_MODE_LABELS[1]:
-            self.device_mode_var.set(DEVICE_MODE_LABELS[1])
-
         if snap.connecting:
-            for widget in (self.combo_port, self.combo_baud):
+            for widget in editable:
                 widget.configure(state="disabled")
             self.btn_refresh.configure(state="disabled", bg="#f1f5f9", fg="#a8b3c0")
             self.btn_connect.configure(state="disabled", bg="#b8c4d0",
                                        text="连接中…")
             return
 
-        for widget in (self.combo_port, self.combo_baud):
-            widget.configure(state="readonly")
-        self.btn_refresh.configure(state="normal", bg="#eef2f7", fg=TEXT)
-
-        if serial_connected:
-            for widget in (self.combo_port, self.combo_baud):
+        if real_connected:
+            for widget in editable:
                 widget.configure(state="disabled")
             self.btn_refresh.configure(state="disabled", bg="#f1f5f9", fg="#a8b3c0")
             self.btn_connect.configure(state="normal", bg="#dc2626", text="断开")
         else:
+            for widget in editable:
+                widget.configure(state="normal")
+            if mode != "ble" or self.btn_refresh.cget("text") == "扫描":
+                self.btn_refresh.configure(state="normal", bg="#eef2f7", fg=TEXT)
             self.btn_connect.configure(state="normal", bg=ACCENT, text="连接")
 
     # ----------------------------------------------------------------- 关闭
@@ -500,6 +638,10 @@ class MainWindow:
             "device_mode": self._ui_device_mode,
             "port": self.port_var.get().strip(),
             "baud": int(self.baud_var.get() or DEFAULT_BAUD),
+            "wifi_host": self.wifi_host_var.get().strip(),
+            "wifi_port": int(self.wifi_port_var.get().strip() or 3333),
+            "ble_address": self._ble_devices.get(self.port_var.get().strip(),
+                                                 self.config.get("ble_address", "")),
             "speed": snap.speed if snap else self.config.get("speed", 2),
             "oscillation": snap.oscillation if snap else False,
             "angle": snap.angle if snap else self.config.get("angle", 90),

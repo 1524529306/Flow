@@ -19,9 +19,11 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from .device.base import DeviceError, FanDevice
+from .device.base import DeviceError, FanDevice, LineProtocolDevice
+from .device.bledev import BleFanDevice
 from .device.mock import MockFanDevice
 from .device.serialdev import SerialFanDevice
+from .device.wifidev import DEFAULT_TCP_PORT, WifiFanDevice
 from .protocol import (
     ANGLE_CENTER,
     ANGLE_MAX,
@@ -151,6 +153,26 @@ class FanController:
         try:
             device = SerialFanDevice(port, baud)
             device.connect()  # 失败抛 DeviceError
+            self._attach(device)
+        finally:
+            self._set_connecting(False)
+
+    def connect_wifi(self, host: str, port: int = DEFAULT_TCP_PORT) -> None:
+        """通过 WiFi（TCP）连接设备。耗时操作，调用方应放在后台线程。"""
+        self._set_connecting(True)
+        try:
+            device = WifiFanDevice(host, port)
+            device.connect()
+            self._attach(device)
+        finally:
+            self._set_connecting(False)
+
+    def connect_ble(self, address: str) -> None:
+        """通过蓝牙 BLE 连接设备。耗时操作，调用方应放在后台线程。"""
+        self._set_connecting(True)
+        try:
+            device = BleFanDevice(address)
+            device.connect()
             self._attach(device)
         finally:
             self._set_connecting(False)
@@ -433,7 +455,7 @@ class FanController:
     def _tick_poll(self) -> None:
         with self._lock:
             device = self._device
-            if device is None or not isinstance(device, SerialFanDevice):
+            if device is None or not isinstance(device, LineProtocolDevice):
                 return
             if time.monotonic() < self._next_poll:
                 return

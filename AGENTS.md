@@ -10,7 +10,8 @@ FlowCC = 桌面气流控制中心。Python(tkinter) 桌面软件 + ESP32 参考�
 
 ## 当前状态
 
-- 软件版本 v1.1.0（git tag v1.1.1 为工程化打包里程碑），里程碑 M1.1 已完成。
+- 软件版本 v1.3.0（tag v1.2.0 视觉升级 / v1.3.0 多传输），里程碑 M1.3 已完成。
+- 传输层：模拟 / 串口 / WiFi(TCP 3333) / BLE(NUS) 四模式，协议同一套；bleak 为可选依赖。
 - M2（硬件原型联调）待启动：硬件未购齐，设备抽象层保证软件可独立演进。
 - 仓库：https://github.com/1524529306/Flow.git （origin 已配置）。
 
@@ -37,6 +38,7 @@ FlowCC = 桌面气流控制中心。Python(tkinter) 桌面软件 + ESP32 参考�
    MockFanDevice 与 SerialFanDevice，保持「无硬件可开发」。
 2. 协议变更四同步：改协议必须同步更新 protocol.py、firmware/*.ino、
    tests/、产品文档生成脚本，保持向后兼容（旧帧可解析）。
+2b. 传输层改动必须补 tests/test_transports.py 的端到端用例（FakeSerial / 本地 TCP）。
 3. 线程模型：所有设备操作入队由 worker 执行；GUI 只读 Snapshot 渲染。
 4. 交互验证：UI/挂件改动用桌面截屏目检（透明窗注意 ClearType 粉边问题，
    文字需加实色底条）。
