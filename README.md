@@ -78,9 +78,43 @@ FlowCC/
 │   └── gui/mainwindow.py   # tkinter 控制面板
 │   └── gui/widget.py       # 透明桌面风扇挂件（主交互入口）
 ├── firmware/esp32_fan/     # ESP32 参考固件（Arduino）
+├── installer/              # Inno Setup 安装包脚本（flowcc.iss + zh_cn.isl）
+├── launcher.py             # PyInstaller 打包入口
+├── soft_log.png / flowcc.ico  # 应用 Logo 与图标
 ├── tests/                  # 单元测试（协议 + 控制器）
 └── requirements.txt        # 依赖：pyserial
 ```
+
+## 打包与安装（给同事分发）
+
+1. 打包独立 exe（无需 Python 环境）：
+
+```bat
+python -m PyInstaller --noconfirm --onefile --windowed --name FlowCC ^
+  --icon=flowcc.ico --add-data "flowcc.ico;." ^
+  --hidden-import=serial --hidden-import=serial.tools --hidden-import=serial.tools.list_ports ^
+  launcher.py
+```
+
+2. 编译中文安装向导（需 Inno Setup 6）：
+
+```bat
+ISCC.exe installer\flowcc.iss
+```
+
+3. 把 `release\FlowCC-Setup-1.1.0.exe` 发给同事：下一步 → 安装，
+   自动创建桌面快捷方式（四叶草图标）与开始菜单，免管理员权限，自带卸载程序。
+
+## GitHub 协作
+
+远程仓库已配置：https://github.com/1524529306/Flow.git 。
+本机 git 走代理 127.0.0.1:7890，推送前先开启 Clash，然后：
+
+```bat
+git push -u origin main --tags
+```
+
+首次推送按提示登录 GitHub 授权一次即可（凭据会保存）。
 
 ## 后续路线
 

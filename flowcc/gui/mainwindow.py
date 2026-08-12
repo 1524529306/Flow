@@ -78,10 +78,6 @@ class MainWindow:
         root.title(f"{APP_NAME} · 桌面气流控制中心")
         root.configure(bg=BG)
         root.resizable(False, False)
-        try:
-            root.iconbitmap(default="")
-        except tk.TclError:
-            pass
 
         style = ttk.Style(root)
         if "clam" in style.theme_names():

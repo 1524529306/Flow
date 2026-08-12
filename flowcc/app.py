@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 import tkinter as tk
+from pathlib import Path
 
 from . import APP_NAME, __version__
 from .config import load_config, save_config
@@ -12,6 +14,30 @@ from .gui.mainwindow import MainWindow
 from .gui.widget import FanWidget
 
 logger = logging.getLogger(__name__)
+
+
+def find_app_icon() -> Path | None:
+    """按优先级查找应用图标：exe 同目录 > PyInstaller 包内 > 项目根目录。"""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).parent / "flowcc.ico")
+        candidates.append(Path(sys._MEIPASS) / "flowcc.ico")
+    candidates.append(Path(__file__).resolve().parents[1] / "flowcc.ico")
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def apply_app_icon(root: tk.Tk) -> None:
+    icon = find_app_icon()
+    if icon is None:
+        return
+    try:
+        # default= 让所有子窗口（含桌面挂件）继承同一图标
+        root.iconbitmap(default=str(icon))
+    except tk.TclError:
+        logger.warning("设置应用图标失败: %s", icon, exc_info=True)
 
 
 def main(argv=None) -> int:
@@ -36,6 +62,7 @@ def main(argv=None) -> int:
     controller.connect_mock()  # 启动默认进入模拟模式，保证无硬件也能立即使用
 
     root = tk.Tk()
+    apply_app_icon(root)
     window = MainWindow(root, controller, config, on_close=save_config)
     # v1.1：桌面挂件为主交互入口，控制中心默认隐藏、作为兜底配置
     root.withdraw()
