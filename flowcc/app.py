@@ -29,7 +29,29 @@ def find_app_icon() -> Path | None:
     return None
 
 
+def find_logo_png() -> Path | None:
+    """macOS 用 PNG 作为窗口图标（iconphoto 不支持 ico）。"""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).parent / "soft_log.png")
+        candidates.append(Path(sys._MEIPASS) / "soft_log.png")
+    candidates.append(Path(__file__).resolve().parents[1] / "soft_log.png")
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
 def apply_app_icon(root: tk.Tk) -> None:
+    if sys.platform == "darwin":
+        logo = find_logo_png()
+        if logo is not None:
+            try:
+                root._flowcc_icon = tk.PhotoImage(file=str(logo))
+                root.iconphoto(True, root._flowcc_icon)
+            except tk.TclError:
+                logger.warning("设置应用图标失败: %s", logo, exc_info=True)
+        return
     icon = find_app_icon()
     if icon is None:
         return

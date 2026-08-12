@@ -43,9 +43,11 @@ SUB = "#6b7280"
 DANGER = "#dc2626"
 IDLE = "#e2e8f0"
 
-FONT = ("Microsoft YaHei UI", 10)
-FONT_S = ("Microsoft YaHei UI", 9)
-FONT_L = ("Microsoft YaHei UI", 12, "bold")
+import sys as _sys
+UI_FONT = "PingFang SC" if _sys.platform == "darwin" else "Microsoft YaHei UI"
+FONT = (UI_FONT, 10)
+FONT_S = (UI_FONT, 9)
+FONT_L = (UI_FONT, 12, "bold")
 
 DEVICE_MODE_LABELS = ["模拟模式", "串口设备", "WiFi 设备", "蓝牙设备"]
 DEVICE_MODE_KEYS = {
@@ -230,7 +232,7 @@ class MainWindow:
                  anchor="w").grid(row=0, column=0, columnspan=3, sticky="w")
         self.speed_buttons: List[Tuple[int, tk.Button]] = []
         for level in range(SPEED_MIN, SPEED_MAX + 1):
-            btn = tk.Button(right, text=f"{level} 档", font=("Microsoft YaHei UI", 11, "bold"),
+            btn = tk.Button(right, text=f"{level} 档", font=(UI_FONT, 11, "bold"),
                             width=7, height=2, bd=0, cursor="hand2",
                             command=lambda lv=level: self._on_speed(lv))
             btn.grid(row=1, column=level - SPEED_MIN, padx=(0, 10), pady=(4, 12))

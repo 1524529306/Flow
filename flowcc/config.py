@@ -1,9 +1,10 @@
-"""应用配置持久化（JSON，存于 %APPDATA%/FlowCC/config.json）。"""
+"""应用配置持久化（跨平台数据目录下的 config.json）。"""
 from __future__ import annotations
 
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -23,11 +24,22 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 
-def config_path() -> Path:
-    base = os.environ.get("APPDATA") or str(Path.home())
-    folder = Path(base) / "FlowCC"
+def app_data_dir() -> Path:
+    """跨平台应用数据目录（配置、皮肤缓存等）。"""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or str(Path.home()))
+        folder = base / "FlowCC"
+    elif sys.platform == "darwin":
+        folder = Path.home() / "Library" / "Application Support" / "FlowCC"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        folder = base / "FlowCC"
     folder.mkdir(parents=True, exist_ok=True)
-    return folder / "config.json"
+    return folder
+
+
+def config_path() -> Path:
+    return app_data_dir() / "config.json"
 
 
 def load_config() -> Dict[str, Any]:

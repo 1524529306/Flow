@@ -38,9 +38,8 @@ def _builtin_dir() -> Path | None:
 
 
 def user_skin_dir() -> Path:
-    import os
-    base = os.environ.get("APPDATA") or str(Path.home())
-    folder = Path(base) / "FlowCC" / "skins"
+    from ..config import app_data_dir
+    folder = app_data_dir() / "skins"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 

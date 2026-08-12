@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import time
 import tkinter as tk
 from tkinter import filedialog
@@ -26,7 +27,10 @@ from ..protocol import ANGLE_CENTER, ANGLE_MAX, ANGLE_MIN, SPEED_MAX, SPEED_MIN
 from . import skins
 from .widget_art import HEAD_CX, HEAD_CY, HEAD_R, W, H, ModernFanArt
 
-# 透明窗的“魔法色”：画布背景用该色，再声明为透明，即得异形悬浮窗。
+IS_MAC = sys.platform == "darwin"
+UI_FONT = "PingFang SC" if IS_MAC else "Microsoft YaHei UI"
+
+# 透明窗的“魔法色”：画布背景用该色，再声明为透明，即得异形悬浮窗（Windows）。
 MAGIC = "#ff00ff"
 
 STATUS_Y = 262
@@ -88,12 +92,21 @@ class FanWidget:
 
         self._bind_events()
         self.win.update_idletasks()
-        try:
-            self.win.attributes("-transparentcolor", MAGIC)
-        except tk.TclError:
-            pass  # 非 Windows 平台降级为普通窗口
+        if IS_MAC:
+            # macOS Aqua：整窗透明 + 系统透明画布，PNG alpha 直接合成
+            try:
+                self.win.attributes("-transparent", True)
+                self.canvas.configure(bg="systemTransparent")
+            except tk.TclError:
+                self.win.configure(bg="#f2f5f7")
+                self.canvas.configure(bg="#f2f5f7")
+        else:
+            try:
+                self.win.attributes("-transparentcolor", MAGIC)
+            except tk.TclError:
+                pass  # 不支持时降级为普通窗口
 
-        self._menu = tk.Menu(self.win, tearoff=0, font=("Microsoft YaHei UI", 10))
+        self._menu = tk.Menu(self.win, tearoff=0, font=(UI_FONT, 10))
         self._build_menu()
         self._tick()
 
@@ -106,7 +119,7 @@ class FanWidget:
             label=osc_label,
             command=lambda: self.controller.set_oscillation(
                 not (snap.oscillation if snap else False)))
-        skin_menu = tk.Menu(self._menu, tearoff=0, font=("Microsoft YaHei UI", 10))
+        skin_menu = tk.Menu(self._menu, tearoff=0, font=(UI_FONT, 10))
         for sid, name in self._skin_mgr.list_skins():
             label = f"✓ {name}" if sid == self._skin_id else name
             skin_menu.add_command(label=label,
@@ -145,6 +158,8 @@ class FanWidget:
         c.bind("<B1-Motion>", self._on_motion)
         c.bind("<ButtonRelease-1>", self._on_release)
         c.bind("<Button-3>", self._on_right_click)
+        if IS_MAC:
+            c.bind("<Button-2>", self._on_right_click)
         c.bind("<MouseWheel>", self._on_wheel)
         c.bind("<Enter>", lambda e: self.win.focus_set())
         self.win.bind("<Left>", lambda e: self._nudge_angle(-ANGLE_STEP))
@@ -251,7 +266,7 @@ class FanWidget:
         else:
             status = "已关机 · 点击扇头开启"
         text_item = c.create_text(HEAD_CX, STATUS_Y, text=status, fill="white",
-                                  font=("Microsoft YaHei UI", 9), tags="dyn")
+                                  font=(UI_FONT, 9), tags="dyn")
         x1, y1, x2, y2 = c.bbox(text_item)
         chip = c.create_rectangle(x1 - 8, y1 - 3, x2 + 8, y2 + 3,
                                   fill=CHIP_BG, outline=CHIP_BG, tags="dyn")
@@ -267,4 +282,4 @@ class FanWidget:
             c.create_oval(px - 10, PIP_Y - 10, px + 10, PIP_Y + 10,
                           fill=fill, outline=edge, width=1, tags="dyn")
             c.create_text(px, PIP_Y, text=str(level), fill=fg,
-                          font=("Microsoft YaHei UI", 9, "bold"), tags="dyn")
+                          font=(UI_FONT, 9, "bold"), tags="dyn")

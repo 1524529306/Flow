@@ -74,6 +74,16 @@ PING       心跳
 软件侧由 `flowcc/device/` 的设备抽象统一承载：模拟 / 串口 / WiFi / 蓝牙
 可在控制中心热切换，挂件与场景引擎完全无感。
 
+## macOS 适配（v1.5）
+
+- 运行：`brew install python-tk`（Tk ≥ 8.6）后 `pip3 install -r requirements.txt pillow`，
+  双击 `run.command` 或 `python3 -m flowcc`。
+- 挂件透明窗走 Aqua `-transparent` + `systemTransparent`，失败自动降级为浅色普通窗口；
+  图标用 soft_log.png（iconphoto），字体 PingFang SC，右键兼容 Control/右键点按。
+- 配置与皮肤缓存位于 `~/Library/Application Support/FlowCC/`。
+- 打包：在 Mac 上执行 `packaging/build_mac.sh` 产出 dist/FlowCC.app，zip 分发；
+  Windows 安装包（Inno）与 mac 包功能一致，蓝牙在 mac 由 bleak 原生支持。
+
 ## 运行测试
 
 ```bat
