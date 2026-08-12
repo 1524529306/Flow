@@ -1,7 +1,10 @@
-"""皮肤系统：经典渲染 + 内置四风格 + 第三方上传自动适配。
+"""皮肤系统：经典渲染 + 内置奶油风格 + 第三方上传（v2.0.0）。
 
-内置皮肤源图位于 assets/skins/（打包时随 exe 携带）；处理缓存与
-自定义皮肤位于 %APPDATA%/FlowCC/skins/。选择结果存入配置 "skin"。
+v2.0 起，所有皮肤 PNG 必须由作者在外部工具（remove.bg / Photoshop / Figma /
+GIMP）提前导出为 RGBA 含透明通道。运行时不再做去背景处理，仅做校验与缩放。
+内置皮肤源图位于 assets/skins/，由 ``tools/build_skins.py`` 离线生成；
+处理缓存与自定义皮肤位于 ``%APPDATA%/FlowCC/skins/``。选择结果存入配置 "skin"。
+详见 ``docs/SKIN_GUIDE.md``。
 """
 from __future__ import annotations
 
@@ -20,12 +23,9 @@ logger = logging.getLogger(__name__)
 
 CLASSIC = ("classic", "经典渲染")
 BUILTIN = [
-    ("style_a", "现代简约", "style_A_modern.png"),
-    ("style_b", "深色霓虹", "style_B_glass.png"),
-    ("style_c", "奶油可爱", "style_C_cream.png"),
-    ("style_d", "机甲科技", "style_D_mecha.png"),
+    ("style_cream", "奶油可爱", "style_cream.png"),
 ]
-DEFAULT_SKIN = "style_a"
+DEFAULT_SKIN = "style_cream"
 FAN_AREA_BOTTOM = 252  # 风扇图放置区底边（状态条之上）
 
 
@@ -150,38 +150,13 @@ class SkinManager:
             png_path = user_skin_dir() / f"{skin_id}.png"
             try:
                 skin_processor.process_skin(src, png_path, meta_path)
-            except ValueError as exc:
-                # 内置皮肤源图可能「白主体+浅灰底」太接近无法识别，
-                # 或主体太小；静默回退到经典渲染，不影响使用。
-                logger.warning("皮肤 %s 处理失败: %s，回退到经典渲染",
+            except skin_processor.SkinFormatError as exc:
+                # v2.0 严格模式：内置皮肤由 build_skins.py 离线生成透明 PNG，
+                # 不会失败；失败说明源图丢失或损坏，回退到经典渲染并记录。
+                logger.warning("皮肤 %s 校验失败: %s，回退到经典渲染",
                                skin_id, exc)
                 return ModernFanArt()
-            # 内置皮肤额外做一次质量检查：去背景过度导致主体残缺时也回退
-            if self._is_builtin(skin_id) and not self._check_skin_quality(png_path):
-                logger.warning("内置皮肤 %s 处理结果不佳（主体像素过少），"
-                               "回退到经典渲染", skin_id)
-                png_path.unlink(missing_ok=True)
-                meta_path.unlink(missing_ok=True)
-                return ModernFanArt()
         return ImageSkinArt(json.loads(meta_path.read_text(encoding="utf-8")))
-
-    @staticmethod
-    def _is_builtin(skin_id: str) -> bool:
-        return any(sid == skin_id for sid, _, _ in BUILTIN)
-
-    @staticmethod
-    def _check_skin_quality(png_path: Path, min_keep_ratio: float = 0.25) -> bool:
-        """处理后 PNG 的不透明像素占比，太低说明去背景过度。"""
-        try:
-            img = Image.open(png_path).convert("RGBA")
-            alpha = img.split()[3]
-            hist = alpha.histogram()
-            total = img.size[0] * img.size[1]
-            if not total:
-                return False
-            return hist[255] / total >= min_keep_ratio
-        except Exception:
-            return False
 
     @staticmethod
     def _source_of(skin_id: str) -> Path | None:
@@ -193,7 +168,10 @@ class SkinManager:
         return None
 
     def import_skin(self, src_path) -> str:
-        """上传第三方皮肤：处理适配并登记，返回皮肤 id。"""
+        """上传第三方皮肤：要求源文件是 RGBA 含透明通道的 PNG。
+
+        不满足要求时抛 ``SkinFormatError``，错误信息指向《皮肤制作指南》。
+        """
         stem = Path(src_path).stem
         skin_id = f"custom_{stem}"[:60]
         skin_processor.process_skin(

@@ -4,3 +4,5 @@ dist/
 build/
 *.spec
 release/
+.workbuddy/
+DIY*.md
