@@ -1,13 +1,14 @@
-"""桌面挂件视觉渲染引擎 —— 经典渲染（3D 立体版，v2.0.1）。
+"""桌面挂件视觉渲染引擎 —— 经典渲染（3D 立体版）。
 
 用 PIL 离屏渲染分层素材（超采样抗锯齿），运行时只做轻量合成。
 v2.0.1 起统一左上角光源，为外环 / 笼体 / 扇叶 / 轴心 / 底座 / 立柱
 加入径向与线性渐变高光、阴影，替换 v2.0 的平面化观感。
+v2.0.3 起增加前网罩层：放射格栅随摇头做椭圆透视（中间疏两侧密），
+格栅线半透明，扇叶在网罩内若隐若现，摇头时呈现网罩立体投影。
 
 渲染约定：
   - 主体形状一律先画「不透明」底色，再用半透明渐变层 alpha_composite
-    叠出高光/阴影 —— 这样 RGB 被正确混合，alpha 仍保持 255，
-    兼容末端的透明窗 alpha 二值化（不透明主体不产生粉边）。
+    叠出高光/阴影 —— 这样 RGB 被正确混合，alpha 仍保持 255。
   - 交互几何（HEAD_CX/HEAD_CY/HEAD_R、档位圆点）与旧版完全一致。
 """
 from __future__ import annotations
@@ -25,7 +26,9 @@ RING_EDGE = (214, 222, 227, 255)     # 外环描边
 ACCENT = (70, 172, 178, 255)         # teal 环（开）
 ACCENT_OFF = (176, 192, 200, 255)    # teal 环（关）
 CAGE = (250, 251, 252, 255)          # 笼内底
-GRILLE = (219, 225, 230, 255)        # 放射格栅
+GRILLE = (219, 225, 230, 255)        # 后壳放射格栅（扇叶之后）
+GRILLE_FRONT = (168, 184, 194, 165)  # 前网罩放射格栅（扇叶之前，半透明）
+GRILLE_EDGE = (222, 229, 234, 255)   # 前网罩外环亮面
 BLADE_ON = (66, 78, 92, 255)         # 扇叶（开）
 BLADE_OFF = (186, 196, 205, 255)     # 扇叶（关）
 HUB = (248, 250, 251, 255)           # 轴心
@@ -86,6 +89,7 @@ class ModernFanArt:
         self.hub = self._build_hub()
         self.head_w = self.head_back_on.width
         self.head_h = self.head_back_on.height
+        self._grille_cache: dict[int, Image.Image] = {}
 
     # ------------------------------------------------------------- 机身
     def _build_body(self) -> Image.Image:
@@ -193,6 +197,46 @@ class ModernFanArt:
         img = Image.alpha_composite(img, hub)
         return img
 
+    # ------------------------------------------------------------- 前网罩
+    def _build_grille(self, yaw_deg: float) -> Image.Image:
+        """前网罩：外环 + 放射格栅 + 中心圆，随摇头做椭圆透视。
+
+        格栅端点按椭圆映射（x 半径 = r·cos(yaw)），摇头时网罩呈现
+        立体投影：中间辐条疏、两侧密，与整体水平压扁一致。
+        格栅线半透明，扇叶透过格栅若隐若现 →「扇叶在网罩内」的层次。
+        """
+        size = (HEAD_R + 10) * 2
+        s = 2  # 格栅层用较低超采样：细线抗锯齿足够，摇头每帧重建更快
+        img = Image.new("RGBA", (size * s, size * s), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        c = size * s // 2
+        k = max(0.25, math.cos(math.radians(yaw_deg)))
+        r_out = (HEAD_R + 1) * s       # 前网罩外环外沿
+        r_g = (HEAD_R - 4) * s         # 格栅外端点
+        r_hub = 15 * s                 # 中心圆半径
+
+        def ex(rr: int) -> tuple:
+            return (c - rr * k, c - rr, c + rr * k, c + rr)
+
+        # 外环：描边 + 亮面，叠出金属环厚度
+        d.ellipse(ex(r_out + s), fill=RING_EDGE)
+        d.ellipse(ex(r_out), fill=GRILLE_EDGE)
+        # 放射格栅：中心圆 → 外环内沿，椭圆映射（透视压缩）
+        for i in range(28):
+            a = math.radians(i * 360 / 28)
+            x0 = c + math.cos(a) * r_hub * k
+            y0 = c - math.sin(a) * r_hub
+            x1 = c + math.cos(a) * r_g * k
+            y1 = c - math.sin(a) * r_g
+            d.line([x0, y0, x1, y1], fill=GRILLE_FRONT, width=max(1, s * 3 // 4))
+        # 中心圆盖（罩住轴心，比 hub 大一圈）
+        d.ellipse(ex(r_hub), fill=HUB)
+        # 整体左上光源：球面高光/阴影
+        mask = _corner_light((size * s, size * s), small=48)
+        img = _highlight(img, mask, 16)
+        img = _shade(img, ImageOps.invert(mask), 18)
+        return img.resize((img.width // s, img.height // s), Image.LANCZOS)
+
     # ------------------------------------------------------------- 合成
     def compose(self, spin_deg: float, yaw_deg: float, on: bool) -> Image.Image:
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -205,6 +249,18 @@ class ModernFanArt:
         hub = self.hub
         head.alpha_composite(hub, dest=((hw - hub.width) // 2, (hh - hub.height) // 2))
 
+        # 前网罩：随 yaw 动态椭圆透视（摇头立体感）。yaw 连续变化时
+        # 每帧重建；静止时命中缓存省掉重复绘制。
+        key = round(yaw_deg, 1)
+        grille = self._grille_cache.get(key)
+        if grille is None:
+            grille = self._build_grille(yaw_deg)
+            if len(self._grille_cache) > 40:
+                self._grille_cache.clear()
+            self._grille_cache[key] = grille
+        head.alpha_composite(grille, dest=((hw - grille.width) // 2,
+                                           (hh - grille.height) // 2))
+
         k = math.cos(math.radians(yaw_deg))
         xoff = math.sin(math.radians(yaw_deg)) * 14
         if k < 0.995:
@@ -214,9 +270,4 @@ class ModernFanArt:
         dest_x = HEAD_CX - hw // 2 + int(xoff)
         dest_y = HEAD_CY - hh // 2
         img.alpha_composite(head, dest=(dest_x, dest_y))
-
-        # 透明窗(transparentcolor)只认纯色魔法色：半透明抗锯齿像素会留下
-        # 粉边，故将 alpha 二值化，轮廓颜色保持正确。
-        r, g, b, a = img.split()
-        a = a.point(lambda v: 255 if v > 96 else 0)
-        return Image.merge("RGBA", (r, g, b, a))
+        return img
