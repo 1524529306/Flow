@@ -37,7 +37,6 @@ POLE = (235, 238, 241, 255)          # 立柱
 POLE_SHADE = (205, 213, 219, 255)    # 立柱暗面
 BASE_TOP = (246, 248, 250, 255)      # 底座顶面
 BASE_SIDE = (211, 219, 224, 255)     # 底座侧面
-SHADOW = (38, 50, 60, 60)            # 地面软阴影
 
 # 高光 / 阴影强度
 HIGHLIGHT = (255, 255, 255)
@@ -96,8 +95,6 @@ class ModernFanArt:
         img = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         cx, s = HEAD_CX * SS, SS
-        # 地面软阴影（左浅右深，随光源）
-        d.ellipse([cx - 54 * s, 246 * s, cx + 54 * s, 264 * s], fill=SHADOW)
         # 底座侧面（暗） + 顶面（亮），叠出圆柱体厚度
         d.rounded_rectangle([cx - 46 * s, 232 * s, cx + 46 * s, 250 * s],
                             radius=9 * s, fill=BASE_SIDE)
