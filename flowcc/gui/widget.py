@@ -120,9 +120,10 @@ class FanWidget:
             command=lambda: self.controller.set_oscillation(
                 not (snap.oscillation if snap else False)))
         skin_menu = tk.Menu(self._menu, tearoff=0, font=(UI_FONT, 10))
+        # v2.0.1：文字在前、勾选在后，用全角空格对齐，上下一致
         for sid, name in self._skin_mgr.list_skins():
-            label = f"✓ {name}" if sid == self._skin_id else name
-            skin_menu.add_command(label=label,
+            mark = "✓" if sid == self._skin_id else "\u3000"
+            skin_menu.add_command(label=f"{name}\u3000{mark}",
                                   command=lambda s=sid: self._set_skin(s))
         skin_menu.add_separator()
         skin_menu.add_command(label="上传新皮肤…", command=self._upload_skin)
