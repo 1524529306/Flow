@@ -131,6 +131,19 @@ class MainWindow:
         self._build_timer(outer)
         self._build_statusbar(outer)
 
+        # 固定窗口尺寸：四种传输模式显示/隐藏的连接控件不同，若让窗口
+        # 跟随内容自适应会在切换模式时大小跳动。取四种模式各自自然请求
+        # 宽度的最大值锁死窗口尺寸，各模式共用同一大小且不浪费空间。
+        max_w = max_h = 0
+        for mode in ("mock", "serial", "wifi", "ble"):
+            self._set_mode_visibility(mode)
+            outer.update_idletasks()
+            max_w = max(max_w, outer.winfo_reqwidth())
+            max_h = max(max_h, outer.winfo_reqheight())
+        outer.configure(width=max_w, height=max_h)
+        outer.grid_propagate(False)
+        self._apply_device_mode(self._ui_device_mode)
+
     def _build_connection(self, parent: tk.Widget) -> None:
         card = self._card(parent, "设备连接")
         card.grid(row=0, column=0, sticky="ew", pady=(0, 10))

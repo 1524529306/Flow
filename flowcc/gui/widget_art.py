@@ -61,9 +61,15 @@ def _corner_light(size, small: int = 64) -> Image.Image:
 
 
 def _light(base: Image.Image, mask: Image.Image, color, strength: int) -> Image.Image:
-    """用 mask 控制透明度，把 color 叠加到 base 上（RGB 混合，alpha 不变）。"""
+    """用 mask 控制透明度，把 color 叠加到 base 上（RGB 混合，alpha 不变）。
+
+    关键约束：高光/阴影只作用于 base 已有内容（alpha>0）的像素，
+    否则整层透明边距会被染成半透明色块——正是风扇周围的「方块阴影」。
+    """
     overlay = Image.new("RGBA", base.size, (color[0], color[1], color[2], 0))
     a = mask.point(lambda v: int(v * strength / 255))
+    shape = base.split()[3].point(lambda v: 255 if v > 0 else 0)
+    a = Image.composite(a, Image.new("L", a.size, 0), shape)
     overlay.putalpha(a)
     return Image.alpha_composite(base, overlay)
 
