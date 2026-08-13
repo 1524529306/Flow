@@ -1,6 +1,6 @@
 # 贡献指南
 
-欢迎为 FlowCC 做出贡献！本文档面向**想要提交代码、新功能、Bug 修复、新皮肤**的朋友。
+欢迎为 FlowCC 做出贡献！本文档面向**想要提交代码、新功能、Bug 修复**的朋友。
 
 ---
 
@@ -41,8 +41,8 @@
 |---|---|---|
 | `feat` | 新功能 | `feat: 添加温度联动智能调速` |
 | `fix` | Bug 修复 | `fix: 串口断开后自动重连失效` |
-| `docs` | 文档变更 | `docs: SKIN_GUIDE 增加 Figma 步骤` |
-| `refactor` | 重构（无行为变更）| `refactor: skin_processor 拆分为校验+缩放两函数` |
+| `docs` | 文档变更 | `docs: 补充 macOS 安装说明` |
+| `refactor` | 重构（无行为变更）| `refactor: 拆分协议编解码为独立函数` |
 | `test` | 测试相关 | `test: 增加 BLE 断线重连用例` |
 | `chore` | 杂项 | `chore: 升 pillow 依赖到 10.4` |
 
@@ -82,19 +82,6 @@ python -m unittest discover -s tests -t . -v
 ```bash
 python -m flowcc --smoke
 ```
-
----
-
-## 提交皮肤
-
-详见 [docs/SKIN_GUIDE.md § 5](docs/SKIN_GUIDE.md)。
-
-简版流程：
-
-1. 把源图（不透明）放到 `assets/skins/_sources/<your_skin>.png`
-2. 跑 `python -m tools.build_skins` 生成透明版本
-3. 提 PR，附上渲染效果截图（不同档位、摇头角度）
-4. 维护者审查主体定位与项目调性
 
 ---
 

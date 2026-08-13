@@ -1,8 +1,8 @@
 """Windows 真透明窗（per-pixel alpha）：UpdateLayeredWindow 封装。
 
-tkinter 的 ``-transparentcolor`` 只支持单一"魔法色"透明，PNG 皮肤的
-半透明抗锯齿边缘会留下杂色光晕（用户看到的"阴影"）。改用 Win32
-layered window 逐像素合成 RGBA，彻底消除边缘光晕。
+tkinter 的 ``-transparentcolor`` 只支持单一"魔法色"透明，无法表达
+逐像素 alpha。改用 Win32 layered window 逐像素合成 RGBA，
+半透明像素（如格栅线）正确融合进桌面。
 
 用法：
     lw = LayeredWindow(hwnd, width, height)

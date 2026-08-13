@@ -25,7 +25,7 @@ DEFAULTS: Dict[str, Any] = {
 
 
 def app_data_dir() -> Path:
-    """跨平台应用数据目录（配置、皮肤缓存等）。"""
+    """跨平台应用数据目录（配置等）。"""
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA") or str(Path.home()))
         folder = base / "FlowCC"

@@ -10,8 +10,7 @@
 
 视觉：v2.0.2 起改用 PIL 完整渲染（风扇 + 状态文字 + 档位圆点）。
 透明度分平台实现：
-  - Windows：Win32 ``UpdateLayeredWindow`` 真逐像素 alpha，根治 PNG
-    皮肤边缘光晕（v2.0.x 的"阴影问题"）。
+  - Windows：Win32 ``UpdateLayeredWindow`` 真逐像素 alpha。
   - macOS：Aqua ``-transparent`` + ``systemTransparent``，PNG alpha
     直接合成（mac 本来就支持真透明）。
 """
@@ -21,14 +20,12 @@ import math
 import sys
 import time
 import tkinter as tk
-from tkinter import filedialog
 from typing import Callable, Optional
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 from ..controller import FanController, Snapshot
 from ..protocol import ANGLE_CENTER, ANGLE_MAX, ANGLE_MIN, SPEED_MAX, SPEED_MIN
-from . import skins
 from .widget_art import HEAD_CX, HEAD_CY, HEAD_R, W, H, ModernFanArt
 
 IS_MAC = sys.platform == "darwin"
@@ -113,10 +110,8 @@ class FanWidget:
                                 highlightthickness=0, cursor="hand2")
         self.canvas.pack()
 
-        # 视觉引擎
-        self._skin_mgr = skins.SkinManager()
-        self._skin_id = skins.load_skin_choice()
-        self._art = self._skin_mgr.get_art(self._skin_id)
+        # 视觉引擎（经典渲染）
+        self._art = ModernFanArt()
         self._font = _load_font(12)
 
         # 初始位置：屏幕右侧偏上
@@ -156,38 +151,8 @@ class FanWidget:
             label=osc_label,
             command=lambda: self.controller.set_oscillation(
                 not (snap.oscillation if snap else False)))
-        skin_menu = tk.Menu(self._menu, tearoff=0, font=(UI_FONT, 10))
-        # v2.0.1：文字在前、勾选在后，用全角空格对齐
-        for sid, name in self._skin_mgr.list_skins():
-            mark = "✓" if sid == self._skin_id else "\u3000"
-            skin_menu.add_command(label=f"{name}\u3000{mark}",
-                                  command=lambda s=sid: self._set_skin(s))
-        skin_menu.add_separator()
-        skin_menu.add_command(label="上传新皮肤…", command=self._upload_skin)
-        self._menu.add_cascade(label="皮肤", menu=skin_menu)
         self._menu.add_separator()
         self._menu.add_command(label="退出 FlowCC", command=self.on_quit)
-
-    def _set_skin(self, skin_id: str) -> None:
-        try:
-            self._art = self._skin_mgr.get_art(skin_id)
-        except Exception:
-            self._art = ModernFanArt()
-            skin_id = "classic"
-        self._skin_id = skin_id
-        skins.save_skin_choice(skin_id)
-
-    def _upload_skin(self) -> None:
-        path = filedialog.askopenfilename(
-            title="选择风扇皮肤图片",
-            filetypes=[("PNG 图片", "*.png"), ("所有文件", "*.*")])
-        if not path:
-            return
-        try:
-            skin_id = self._skin_mgr.import_skin(path)
-        except Exception:
-            return
-        self._set_skin(skin_id)
 
     # ---------------------------------------------------------------- 事件
     def _bind_events(self) -> None:

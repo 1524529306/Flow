@@ -5,6 +5,23 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-13
+
+### 移除
+
+- **砍掉整个皮肤子系统**：图片皮肤反复带来边缘"阴影"问题（透明窗机制与
+  PNG 半透明边缘的结构性矛盾），经评估不再保留。删除：
+  - `flowcc/gui/skins.py`（SkinManager / ImageSkinArt）
+  - `flowcc/gui/skin_processor.py`（去背景 / 裁剪 / 扇头检测）
+  - `tools/build_skins.py`（rembg 离线生成器）
+  - `docs/SKIN_GUIDE.md`（皮肤制作指南）
+  - `assets/skins/`（内置皮肤资源）
+  - `tests/test_skins.py`
+  - 右键菜单「皮肤」子菜单与「上传新皮肤」入口
+  - 打包脚本中的 `assets/skins` add-data、README/CONTRIBUTING 皮肤章节
+- 保留经典渲染（含 3D 立体化、前网罩层与摇头椭圆透视）、真实启停动画、
+  Win32 真透明窗等所有非皮肤视觉能力。
+
 ## [2.0.3] - 2026-08-13
 
 ### 新增

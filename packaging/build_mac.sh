@@ -7,7 +7,6 @@
 cd "$(dirname "$0")/.." || exit 1
 
 python3 -m PyInstaller --noconfirm --onedir --windowed --name FlowCC \
-  --add-data "assets/skins:assets/skins" \
   --add-data "soft_log.png:." \
   --hidden-import=serial --hidden-import=serial.tools --hidden-import=serial.tools.list_ports \
   launcher.py
