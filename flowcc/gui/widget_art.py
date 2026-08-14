@@ -14,7 +14,7 @@ v2.0.3 起增加前网罩层：放射格栅随摇头做椭圆透视（中间疏�
 from __future__ import annotations
 
 import math
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 W, H = 240, 300
 HEAD_CX, HEAD_CY, HEAD_R = 120, 100, 64
@@ -95,6 +95,7 @@ class ModernFanArt:
         self.head_w = self.head_back_on.width
         self.head_h = self.head_back_on.height
         self._grille_cache: dict[int, Image.Image] = {}
+        self._frame = 0  # 渲染帧计数，驱动气泡等动画
 
     # ------------------------------------------------------------- 机身
     def _build_body(self) -> Image.Image:
@@ -240,8 +241,50 @@ class ModernFanArt:
         img = _shade(img, ImageOps.invert(mask), 18)
         return img.resize((img.width // s, img.height // s), Image.LANCZOS)
 
+    # ------------------------------------------------------------- 气泡动效
+    def _build_bubbles(self, speed: int) -> Image.Image:
+        """扇叶出风效果：从扇叶位置吹出的透明小泡，数量与风速对应。
+
+        确定性伪随机（帧号 + 气泡序号做种子），无随机抖动：
+        - 水平位置围绕扇叶中心随机分布
+        - 垂直方向从扇叶位置向上吹出
+        - 亮度按高度正弦包络（底部淡入、顶部淡出）
+        - 气泡大小随风速增加
+        """
+        layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        if speed <= 0:
+            return layer
+        d = ImageDraw.Draw(layer)
+        n = 4 + speed * 3               # 1/2/3 档 → 7/10/13 个
+        rise = 2.0 + speed * 0.8        # 升速 2.0/2.8/3.6 px/帧（比原来快，更像风）
+        f = self._frame
+        span = 160                      # y: 100(扇叶中心) → -60(向上吹出)
+        for i in range(n):
+            h = (i * 2654435761 + 1013904223) & 0xFFFFFFFF
+            # 水平位置围绕扇叶中心（HEAD_CX, HEAD_CY）随机分布
+            angle = (h >> 8) % 360 / 100.0
+            radius = 30 + (h >> 16) % 40  # 30~69px 范围
+            x0 = HEAD_CX + math.cos(math.radians(angle)) * radius
+            # 垂直位置从扇叶中心开始
+            y0 = HEAD_CY + math.sin(math.radians(angle)) * radius * 0.3
+            phase = (h >> 24) % 628 / 100.0
+            # 正弦摆动，模拟气流扰动
+            x = x0 + math.sin(f / 18.0 + phase) * 8
+            # 从扇叶位置向上吹出
+            y = y0 - ((f * rise + (h >> 8) % span) % span)
+            t = (y0 - y) / span if span > 0 else 0
+            env = math.sin(math.pi * t)             # 高度包络 0→1→0
+            # 气泡大小随风速增加
+            r = 2.0 + (h >> 16) % 30 / 10.0 + speed * 0.5  # 2.0~5.5px
+            alpha = int(35 + 45 * env)              # 35~80
+            d.ellipse([x - r, y - r, x + r, y + r],
+                      fill=(235, 244, 252, alpha))
+        return layer
+
     # ------------------------------------------------------------- 合成
-    def compose(self, spin_deg: float, yaw_deg: float, on: bool) -> Image.Image:
+    def compose(self, spin_deg: float, yaw_deg: float, on: bool,
+                speed: int = 0) -> Image.Image:
+        self._frame += 1
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         img.alpha_composite(self.body)
 
@@ -273,4 +316,14 @@ class ModernFanArt:
         dest_x = HEAD_CX - hw // 2 + int(xoff)
         dest_y = HEAD_CY - hh // 2
         img.alpha_composite(head, dest=(dest_x, dest_y))
-        return img
+
+        # 气泡动效：开机时从底座附近升起的小泡，数量与升速随风速。
+        if on:
+            img.alpha_composite(self._build_bubbles(speed))
+
+        # 边缘羽化：对 alpha 通道做小半径高斯模糊，风扇外轮廓形成
+        # 3~5px 的透明渐变过渡带，消除硬边、提升与桌面的融合度。
+        # 内部 alpha=255 区域不受影响（邻域同为 255），只有边界软化。
+        r, g, b, a = img.split()
+        a = a.filter(ImageFilter.GaussianBlur(radius=2))
+        return Image.merge("RGBA", (r, g, b, a))

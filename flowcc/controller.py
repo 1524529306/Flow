@@ -80,6 +80,7 @@ class Snapshot:
     active_speed: Optional[int]     # 实际输出档位（模式引擎可能调整）
     timer_remaining: Optional[float]
     timer_total: Optional[float]
+    mute: bool                 # 风声静音（纯本地 GUI 状态）
     connected: bool
     connecting: bool
     device_label: str
@@ -103,6 +104,7 @@ class FanController:
         self._angle = ANGLE_CENTER
         self._mode = MODE_NORMAL
         self._active_speed: Optional[int] = None
+        self._mute = False           # 风声静音（纯本地，不进设备协议）
 
         # 定时关机
         self._timer_end: Optional[float] = None
@@ -234,6 +236,11 @@ class FanController:
     def set_oscillation(self, on: bool) -> None:
         self._post(self._do_set_oscillation, bool(on))
 
+    def set_mute(self, muted: bool) -> None:
+        """风声静音开关。纯本地 GUI 状态，直接写（与设备无关）。"""
+        with self._lock:
+            self._mute = bool(muted)
+
     def set_angle(self, degrees: int) -> None:
         """手动摆头（0~180）。会隐式关闭自动摇头。"""
         self._post(self._do_set_angle, int(degrees))
@@ -250,7 +257,8 @@ class FanController:
     def apply_preset(self, speed: Optional[int] = None,
                      oscillation: Optional[bool] = None,
                      mode: Optional[str] = None,
-                     angle: Optional[int] = None) -> None:
+                     angle: Optional[int] = None,
+                     mute: Optional[bool] = None) -> None:
         """启动时用配置预热状态（不改变电源）。"""
         with self._lock:
             if speed is not None and SPEED_MIN <= speed <= SPEED_MAX:
@@ -261,6 +269,8 @@ class FanController:
                 self._mode = mode  # type: ignore[assignment]
             if angle is not None and ANGLE_MIN <= angle <= ANGLE_MAX:
                 self._angle = angle
+            if mute is not None:
+                self._mute = bool(mute)
 
     def _post(self, fn: Callable, *args) -> None:
         self._jobs.put((fn, args))
@@ -491,6 +501,7 @@ class FanController:
                 active_speed=self._active_speed,
                 timer_remaining=remaining,
                 timer_total=self._timer_total,
+                mute=self._mute,
                 connected=device is not None and device.is_connected,
                 connecting=self._connecting,
                 device_label=device.label if device else "未连接",

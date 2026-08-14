@@ -21,6 +21,7 @@ DEFAULTS: Dict[str, Any] = {
     "oscillation": False,
     "angle": 90,
     "mode": "normal",
+    "mute": False,
 }
 
 

@@ -26,6 +26,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 from ..controller import FanController, Snapshot
 from ..protocol import ANGLE_CENTER, ANGLE_MAX, ANGLE_MIN, SPEED_MAX, SPEED_MIN
+from .audio import WindAudio
 from .widget_art import HEAD_CX, HEAD_CY, HEAD_R, W, H, ModernFanArt
 
 IS_MAC = sys.platform == "darwin"
@@ -114,6 +115,11 @@ class FanWidget:
         self._art = ModernFanArt()
         self._font = _load_font(12)
 
+        # 风声（winsound 零依赖；无音频设备/非 Windows 自动降级）。
+        # 静音状态由 controller 统一管理，首帧 tick 时同步。
+        self._audio = WindAudio()
+        self._mute_state: Optional[bool] = None
+
         # 初始位置：屏幕右侧偏上
         sx = self.win.winfo_screenwidth()
         self.win.geometry(f"{W}x{H}+{max(0, sx - W - 60)}+140")
@@ -152,7 +158,16 @@ class FanWidget:
             command=lambda: self.controller.set_oscillation(
                 not (snap.oscillation if snap else False)))
         self._menu.add_separator()
+        mute_on = bool(snap.mute) if snap else False
+        mute_label = "风声静音：关" if mute_on else "风声静音：开"
+        self._menu.add_command(label=mute_label, command=self._toggle_mute)
+        self._menu.add_separator()
         self._menu.add_command(label="退出 FlowCC", command=self.on_quit)
+
+    def _toggle_mute(self) -> None:
+        """切换风声静音（状态经 controller 统一，控制中心同步刷新）。"""
+        snap = self._snap
+        self.controller.set_mute(not (snap.mute if snap else False))
 
     # ---------------------------------------------------------------- 事件
     def _bind_events(self) -> None:
@@ -238,6 +253,13 @@ class FanWidget:
         snap = self.controller.get_snapshot()
         self._snap = snap
 
+        # 风声跟随实际输出档位（模式引擎调整时声音同步起伏）；
+        # 静音状态变化时同步到音频引擎
+        if snap.mute != self._mute_state:
+            self._mute_state = snap.mute
+            self._audio.set_muted(snap.mute)
+        self._audio.update(snap.power, snap.active_speed or snap.speed)
+
         target_vel = SPIN_SPEED[snap.speed] if snap.power else 0
 
         # 开机沿 → 触发启动颤振（真实马达启动瞬间的小幅高频抖动）
@@ -281,7 +303,9 @@ class FanWidget:
     # ---------------------------------------------------------------- 渲染
     def _render(self, snap: Snapshot) -> Image.Image:
         """纯 PIL 渲染完整帧：风扇主体 + 状态文字 + 档位圆点。"""
-        img = self._art.compose(self._spin, self._yaw, snap.power)
+        # 气泡动效跟随实际输出档位（自然风等模式引擎可能动态调整风速）
+        active = (snap.active_speed or snap.speed) if snap.power else 0
+        img = self._art.compose(self._spin, self._yaw, snap.power, active)
         self._draw_overlay(img, snap)
         return img
 

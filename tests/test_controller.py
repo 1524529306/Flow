@@ -78,6 +78,17 @@ class TestControllerWithMock(unittest.TestCase):
         self.controller.set_oscillation(False)
         self.assertTrue(wait_until(lambda: not self.snap().oscillation))
 
+    def test_mute_roundtrip(self):
+        self.assertFalse(self.snap().mute)
+        self.controller.set_mute(True)
+        self.assertTrue(self.snap().mute)   # 直接写，无需等待 worker
+        self.controller.set_mute(False)
+        self.assertFalse(self.snap().mute)
+
+    def test_apply_preset_mute(self):
+        self.controller.apply_preset(mute=True)
+        self.assertTrue(self.snap().mute)
+
     def test_manual_angle_stops_oscillation(self):
         self.controller.set_oscillation(True)
         self.assertTrue(wait_until(lambda: self.snap().oscillation))

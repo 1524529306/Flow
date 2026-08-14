@@ -79,6 +79,7 @@ def main(argv=None) -> int:
         oscillation=config.get("oscillation"),
         mode=config.get("mode"),
         angle=config.get("angle"),
+        mute=config.get("mute"),
     )
     controller.start()
     controller.connect_mock()  # 启动默认进入模拟模式，保证无硬件也能立即使用

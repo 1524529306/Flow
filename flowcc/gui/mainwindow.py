@@ -251,10 +251,21 @@ class MainWindow:
             btn.grid(row=1, column=level - SPEED_MIN, padx=(0, 10), pady=(4, 12))
             self.speed_buttons.append((level, btn))
 
-        self.btn_osc = tk.Button(right, text="摇头：关", font=FONT, width=24,
+        # 摇头 / 风声 并排等宽开关
+        toggle_row = tk.Frame(right, bg=CARD)
+        toggle_row.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        toggle_row.grid_columnconfigure(0, weight=1, uniform="toggle")
+        toggle_row.grid_columnconfigure(1, weight=1, uniform="toggle")
+
+        self.btn_osc = tk.Button(toggle_row, text="摇头：关", font=FONT,
                                  height=1, bd=0, cursor="hand2",
                                  command=self._toggle_osc)
-        self.btn_osc.grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        self.btn_osc.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+
+        self.btn_mute = tk.Button(toggle_row, text="风声：开", font=FONT,
+                                  height=1, bd=0, cursor="hand2",
+                                  command=self._toggle_mute)
+        self.btn_mute.grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
         self.lbl_active = tk.Label(right, text="当前输出：--", bg=CARD,
                                    fg=SUB, font=FONT_S, anchor="w")
@@ -347,6 +358,11 @@ class MainWindow:
         snap = self._last_snapshot
         if snap and snap.connected:
             self.controller.set_oscillation(not snap.oscillation)
+
+    def _toggle_mute(self) -> None:
+        """风声静音开关（纯本地状态，挂件右键菜单同步）。"""
+        snap = self._last_snapshot
+        self.controller.set_mute(not (snap.mute if snap else False))
 
     def _on_mode(self, mode: str) -> None:
         self.lbl_mode_desc.configure(text=self._mode_desc(mode))
@@ -560,6 +576,16 @@ class MainWindow:
             self.btn_osc.configure(state="disabled", bg="#f1f5f9", fg="#a8b3c0",
                                    text="摇头：关")
 
+        # 风声静音开关（本地状态，任何连接状态下可用）
+        if snap.mute:
+            self.btn_mute.configure(bg="#eef2f7", fg=TEXT, text="风声：关",
+                                    activebackground=ACCENT_SOFT,
+                                    activeforeground=TEXT)
+        else:
+            self.btn_mute.configure(bg=ACCENT, fg="white", text="风声：开",
+                                    activebackground=ACCENT_DEEP,
+                                    activeforeground="white")
+
         # 输出指示
         if snap.power and snap.active_speed:
             suffix = ""
@@ -661,6 +687,7 @@ class MainWindow:
             "oscillation": snap.oscillation if snap else False,
             "angle": snap.angle if snap else self.config.get("angle", 90),
             "mode": snap.mode if snap else MODE_NORMAL,
+            "mute": snap.mute if snap else self.config.get("mute", False),
         }
         try:
             self.on_close(settings)
