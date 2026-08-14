@@ -153,8 +153,11 @@ class FanWidget:
         snap = self._snap
         self._menu.add_command(label="打开控制中心", command=self.on_open_center)
         osc_label = "自动摇头：关" if (snap and snap.oscillation) else "自动摇头：开"
+        # 关机状态禁用摇头项（现实语义：关机即停摆）
+        osc_state = ("normal"
+                     if (snap and snap.connected and snap.power) else "disabled")
         self._menu.add_command(
-            label=osc_label,
+            label=osc_label, state=osc_state,
             command=lambda: self.controller.set_oscillation(
                 not (snap.oscillation if snap else False)))
         self._menu.add_separator()
@@ -287,7 +290,8 @@ class FanWidget:
 
         self._spin = (self._spin + self._spin_vel * dt + jitter) % 360
 
-        if snap.oscillation:
+        # 摇头只在开机时摆动；关机即停摆（回到设定角度静止位）
+        if snap.power and snap.oscillation:
             target_yaw = YAW_VISUAL * math.sin(now * 0.9)
         else:
             target_yaw = (snap.angle - ANGLE_CENTER) / 90.0 * YAW_VISUAL

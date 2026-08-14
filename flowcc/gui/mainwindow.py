@@ -356,7 +356,7 @@ class MainWindow:
 
     def _toggle_osc(self) -> None:
         snap = self._last_snapshot
-        if snap and snap.connected:
+        if snap and snap.connected and snap.power:
             self.controller.set_oscillation(not snap.oscillation)
 
     def _toggle_mute(self) -> None:

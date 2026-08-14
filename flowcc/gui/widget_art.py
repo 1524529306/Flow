@@ -242,43 +242,51 @@ class ModernFanArt:
         return img.resize((img.width // s, img.height // s), Image.LANCZOS)
 
     # ------------------------------------------------------------- 气泡动效
-    def _build_bubbles(self, speed: int) -> Image.Image:
-        """扇叶出风效果：从扇叶位置吹出的透明小泡，数量与风速对应。
+    def _build_bubbles(self, speed: int, yaw_deg: float = 0.0) -> Image.Image:
+        """泡泡机式出风效果：半透明肥皂泡从扇叶格栅面喷出，迎着用户飘来。
 
-        确定性伪随机（帧号 + 气泡序号做种子），无随机抖动：
-        - 水平位置围绕扇叶中心随机分布
-        - 垂直方向从扇叶位置向上吹出
-        - 亮度按高度正弦包络（底部淡入、顶部淡出）
-        - 气泡大小随风速增加
+        - 泡泡从格栅面随机点出生，沿出生方向径向飘出 + 轻微下坠弧线；
+        - 飞行中逐渐变大（近大远小）、边缘渐隐（sin 包络淡入淡出）；
+        - 外观为肥皂泡：亮色圆环 + 内部微透明 + 左上高光点；
+        - 喷口中心随摇头 yaw 偏转（与头部透视偏移一致）；
+        - 数量 / 喷射速度与档位对应。
+        确定性伪随机（帧号 + 泡泡序号做种子），无随机抖动。
         """
         layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         if speed <= 0:
             return layer
         d = ImageDraw.Draw(layer)
-        n = 4 + speed * 3               # 1/2/3 档 → 7/10/13 个
-        rise = 2.0 + speed * 0.8        # 升速 2.0/2.8/3.6 px/帧（比原来快，更像风）
+        n = 6 + speed * 2               # 1/2/3 档 → 8/10/12 个
+        step = 0.020 + speed * 0.008    # 飞行进度增量（档位越高喷得越快）
         f = self._frame
-        span = 160                      # y: 100(扇叶中心) → -60(向上吹出)
+        cx = HEAD_CX + math.sin(math.radians(yaw_deg)) * 14   # 喷口随摇头偏转
+        cy = HEAD_CY
+        mouth = 22                      # 格栅面出生散布半径
         for i in range(n):
             h = (i * 2654435761 + 1013904223) & 0xFFFFFFFF
-            # 水平位置围绕扇叶中心（HEAD_CX, HEAD_CY）随机分布
-            angle = (h >> 8) % 360 / 100.0
-            radius = 30 + (h >> 16) % 40  # 30~69px 范围
-            x0 = HEAD_CX + math.cos(math.radians(angle)) * radius
-            # 垂直位置从扇叶中心开始
-            y0 = HEAD_CY + math.sin(math.radians(angle)) * radius * 0.3
-            phase = (h >> 24) % 628 / 100.0
-            # 正弦摆动，模拟气流扰动
-            x = x0 + math.sin(f / 18.0 + phase) * 8
-            # 从扇叶位置向上吹出
-            y = y0 - ((f * rise + (h >> 8) % span) % span)
-            t = (y0 - y) / span if span > 0 else 0
-            env = math.sin(math.pi * t)             # 高度包络 0→1→0
-            # 气泡大小随风速增加
-            r = 2.0 + (h >> 16) % 30 / 10.0 + speed * 0.5  # 2.0~5.5px
-            alpha = int(35 + 45 * env)              # 35~80
+            ang = ((h >> 8) % 628) / 100.0                 # 出生点角度 0~2π
+            rr = ((h >> 16) % 100) / 100.0 * mouth
+            x0 = cx + math.cos(ang) * rr
+            y0 = cy + math.sin(ang) * rr
+            t = (f * step + ((h >> 12) % 97) / 97.0) % 1.0  # 飞行进度循环
+            spread = 30 + 16 * t        # 径向飞行距离
+            ux = math.cos(ang)
+            uy = math.sin(ang) * 0.55
+            x = x0 + ux * spread
+            y = y0 + uy * spread + 26 * t * t              # 重力下坠弧线
+            env = math.sin(math.pi * t)                    # 淡入→淡出
+            r = 2.2 + 6.0 * t + speed * 0.35               # 越飘越近越大
+            ring_a = int(95 + 70 * env)
+            fill_a = int(ring_a * 0.22)
+            hi_a = int(ring_a * 0.7)
             d.ellipse([x - r, y - r, x + r, y + r],
-                      fill=(235, 244, 252, alpha))
+                      outline=(222, 238, 248, ring_a), width=1)
+            d.ellipse([x - r + 1, y - r + 1, x + r - 1, y + r - 1],
+                      fill=(216, 236, 248, fill_a))
+            hr = r * 0.3
+            d.ellipse([x - r * 0.45 - hr, y - r * 0.55 - hr,
+                       x - r * 0.45 + hr, y - r * 0.55 + hr],
+                      fill=(255, 255, 255, hi_a))
         return layer
 
     # ------------------------------------------------------------- 合成
@@ -317,9 +325,9 @@ class ModernFanArt:
         dest_y = HEAD_CY - hh // 2
         img.alpha_composite(head, dest=(dest_x, dest_y))
 
-        # 气泡动效：开机时从底座附近升起的小泡，数量与升速随风速。
+        # 气泡动效：开机时从扇叶正面喷出（迎着用户），数量与流速随风速。
         if on:
-            img.alpha_composite(self._build_bubbles(speed))
+            img.alpha_composite(self._build_bubbles(speed, yaw_deg))
 
         # 边缘羽化：对 alpha 通道做小半径高斯模糊，风扇外轮廓形成
         # 3~5px 的透明渐变过渡带，消除硬边、提升与桌面的融合度。
