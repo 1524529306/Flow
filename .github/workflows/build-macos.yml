@@ -1,0 +1,60 @@
+# FlowCC macOS 云构建
+# 手动触发：GitHub 仓库 Actions -> Build macOS -> Run workflow
+# 产物：Intel(x86_64) 与 Apple Silicon(arm64) 两种 .dmg，各取所需
+
+name: Build macOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-13           # Intel x86_64
+            arch: x86_64
+          - runner: macos-14           # Apple Silicon arm64（macos-latest 已默认 arm64）
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pyserial pillow
+          python -c "import tkinter, serial, PIL; print('deps OK')"
+
+      - name: Generate .icns icon
+        run: |
+          python packaging/macos/make_icns.py soft_log.png FlowCC.icns
+          ls -lh FlowCC.icns
+
+      - name: Build .app with PyInstaller
+        run: |
+          python -m PyInstaller --noconfirm packaging/macos/FlowCC-macOS.spec
+          ls -R dist/FlowCC.app | head -30
+
+      - name: Ad-hoc codesign
+        run: |
+          codesign --force --deep --sign - dist/FlowCC.app || echo "codesign skipped"
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "FlowCC" \
+            -srcfolder dist/FlowCC.app \
+            -ov -format UDZO \
+            "dist/FlowCC-${{ matrix.arch }}.dmg"
+          ls -lh dist/*.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlowCC-macOS-${{ matrix.arch }}
+          path: dist/*.dmg

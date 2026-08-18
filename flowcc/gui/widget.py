@@ -2,13 +2,13 @@
 
 控制中心（主窗口）退居兜底配置，日常操作直接在桌面上完成：
 
-- 点击扇头 / 空格键：开关机
-- 滚轮、点击底部档位圆点：切换 1~3 档
+- 点击扇头 / 空格键 / 底座电源键：开关机
+- 点击底座档位按钮 1/2/3、滚轮：切换 1~3 档
 - 鼠标悬停 + ←/→ 方向键：手动摆头（每步 10°，范围 0~180°）
 - 按住拖拽：移动挂件位置
 - 右键：菜单（打开控制中心 / 自动摇头 / 退出）
 
-视觉：v2.0.2 起改用 PIL 完整渲染（风扇 + 状态文字 + 档位圆点）。
+视觉：v2.0.2 起改用 PIL 完整渲染（风扇 + 状态文字 + 底座按钮）。
 透明度分平台实现：
   - Windows：Win32 ``UpdateLayeredWindow`` 真逐像素 alpha。
   - macOS：Aqua ``-transparent`` + ``systemTransparent``，PNG alpha
@@ -39,8 +39,11 @@ PIP_OFF_EDGE = "#d3dce2"
 CHIP_BG = "#223442"
 
 STATUS_Y = 262
-PIP_Y = 284
-PIP_XS = (90, 120, 150)
+BTN_Y = 238            # 底座按钮行（电源键 + 档位按钮，均在底座范围内）
+BTN_R = 9
+POWER_X = 84           # 电源键圆心（底座左侧）
+POWER_R = 10           # 电源键比档位按钮略大，更醒目
+PIP_XS = (110, 134, 158)   # 档位按钮 1/2/3 圆心（底座右侧）
 
 YAW_VISUAL = 35.0
 ANGLE_STEP = 10
@@ -114,6 +117,7 @@ class FanWidget:
         # 视觉引擎（经典渲染）
         self._art = ModernFanArt()
         self._font = _load_font(12)
+        self._font_s = _load_font(9)
 
         # 风声（winsound 零依赖；无音频设备/非 Windows 自动降级）。
         # 静音状态由 controller 统一管理，首帧 tick 时同步。
@@ -210,9 +214,12 @@ class FanWidget:
             return
         self._press_xy = None
         x, y = event.x, event.y
-        # 档位圆点优先
+        # 底座按钮优先：电源键 → 档位按钮 → 扇头
+        if (x - POWER_X) ** 2 + (y - BTN_Y) ** 2 <= (POWER_R + 2) ** 2:
+            self._toggle_power()
+            return
         for level, px in zip(range(SPEED_MIN, SPEED_MAX + 1), PIP_XS):
-            if (x - px) ** 2 + (y - PIP_Y) ** 2 <= 12 ** 2:
+            if (x - px) ** 2 + (y - BTN_Y) ** 2 <= (BTN_R + 2) ** 2:
                 self.controller.set_speed(level)
                 return
         if self._in_head(x, y):
@@ -314,7 +321,7 @@ class FanWidget:
         return img
 
     def _draw_overlay(self, img: Image.Image, snap: Snapshot) -> None:
-        """在风扇图上叠加状态文字底条和档位圆点（in-place）。"""
+        """在风扇图上叠加状态文字底条和底座按钮（in-place）。"""
         d = ImageDraw.Draw(img)
         font = self._font
 
@@ -326,7 +333,7 @@ class FanWidget:
             elif snap.angle != ANGLE_CENTER:
                 status += f" · 朝向 {snap.angle}°"
         else:
-            status = "已关机 · 点击扇头开启"
+            status = "已关机 · 点击电源键开启"
         bbox = d.textbbox((0, 0), status, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         cx, y = HEAD_CX, STATUS_Y
@@ -337,13 +344,27 @@ class FanWidget:
             radius=4, fill=CHIP_BG)
         d.text((cx, y), status, fill="white", font=font, anchor="mm")
 
-        # 档位圆点
+        # 底座按钮：电源键（左，深色醒目）+ 档位按钮 1/2/3（右）
+        font_s = self._font_s
+        if snap.power:
+            p_fill, p_edge, p_icon = PIP_ON, PIP_ON_EDGE, "white"
+        else:
+            p_fill, p_edge, p_icon = "#40505e", "#2e3a45", "white"
+        d.ellipse([POWER_X - POWER_R, BTN_Y - POWER_R,
+                   POWER_X + POWER_R, BTN_Y + POWER_R],
+                  fill=p_fill, outline=p_edge, width=1)
+        # 电源符号：上部开口弧 + 竖线
+        d.arc([POWER_X - 5, BTN_Y - 5, POWER_X + 5, BTN_Y + 5],
+              start=60, end=300, fill=p_icon, width=2)
+        d.line([(POWER_X, BTN_Y - 4), (POWER_X, BTN_Y + 3)],
+               fill=p_icon, width=2)
         for level, px in zip(range(SPEED_MIN, SPEED_MAX + 1), PIP_XS):
             active = snap.power and level == snap.speed
             if active:
                 fill, edge, fg = PIP_ON, PIP_ON_EDGE, "white"
             else:
                 fill, edge, fg = PIP_OFF_FILL, PIP_OFF_EDGE, "#5b6673"
-            d.ellipse([px - 10, PIP_Y - 10, px + 10, PIP_Y + 10],
+            d.ellipse([px - BTN_R, BTN_Y - BTN_R, px + BTN_R, BTN_Y + BTN_R],
                       fill=fill, outline=edge, width=1)
-            d.text((px, PIP_Y), str(level), fill=fg, font=font, anchor="mm")
+            d.text((px, BTN_Y + 1), str(level), fill=fg, font=font_s,
+                   anchor="mm")

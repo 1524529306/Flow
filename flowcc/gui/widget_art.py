@@ -22,15 +22,15 @@ SS = 3  # 超采样倍数
 
 # 经典渲染调色板
 RING_OUT = (246, 248, 249, 255)      # 外环主色
-RING_EDGE = (214, 222, 227, 255)     # 外环描边
+RING_EDGE = (178, 190, 202, 255)     # 外环描边
 ACCENT = (70, 172, 178, 255)         # teal 环（开）
 ACCENT_OFF = (176, 192, 200, 255)    # teal 环（关）
 CAGE = (250, 251, 252, 255)          # 笼内底
 GRILLE = (219, 225, 230, 255)        # 后壳放射格栅（扇叶之后）
-GRILLE_FRONT = (168, 184, 194, 165)  # 前网罩放射格栅（扇叶之前，半透明）
-GRILLE_EDGE = (222, 229, 234, 255)   # 前网罩外环亮面
-BLADE_ON = (66, 78, 92, 255)         # 扇叶（开）
-BLADE_OFF = (186, 196, 205, 255)     # 扇叶（关）
+GRILLE_FRONT = (100, 120, 140, 215)  # 前网罩放射格栅（扇叶之前，半透明）
+GRILLE_EDGE = (238, 243, 246, 255)   # 前网罩外环亮面
+BLADE_ON = (58, 69, 84, 255)          # 扇叶（开）
+BLADE_OFF = (139, 152, 165, 255)      # 扇叶（关）
 HUB = (248, 250, 251, 255)           # 轴心
 HUB_EDGE = (212, 220, 225, 255)      # 轴心描边
 POLE = (235, 238, 241, 255)          # 立柱
@@ -241,54 +241,6 @@ class ModernFanArt:
         img = _shade(img, ImageOps.invert(mask), 18)
         return img.resize((img.width // s, img.height // s), Image.LANCZOS)
 
-    # ------------------------------------------------------------- 气泡动效
-    def _build_bubbles(self, speed: int, yaw_deg: float = 0.0) -> Image.Image:
-        """泡泡机式出风效果：半透明肥皂泡从扇叶格栅面喷出，迎着用户飘来。
-
-        - 泡泡从格栅面随机点出生，沿出生方向径向飘出 + 轻微下坠弧线；
-        - 飞行中逐渐变大（近大远小）、边缘渐隐（sin 包络淡入淡出）；
-        - 外观为肥皂泡：亮色圆环 + 内部微透明 + 左上高光点；
-        - 喷口中心随摇头 yaw 偏转（与头部透视偏移一致）；
-        - 数量 / 喷射速度与档位对应。
-        确定性伪随机（帧号 + 泡泡序号做种子），无随机抖动。
-        """
-        layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        if speed <= 0:
-            return layer
-        d = ImageDraw.Draw(layer)
-        n = 6 + speed * 2               # 1/2/3 档 → 8/10/12 个
-        step = 0.020 + speed * 0.008    # 飞行进度增量（档位越高喷得越快）
-        f = self._frame
-        cx = HEAD_CX + math.sin(math.radians(yaw_deg)) * 14   # 喷口随摇头偏转
-        cy = HEAD_CY
-        mouth = 22                      # 格栅面出生散布半径
-        for i in range(n):
-            h = (i * 2654435761 + 1013904223) & 0xFFFFFFFF
-            ang = ((h >> 8) % 628) / 100.0                 # 出生点角度 0~2π
-            rr = ((h >> 16) % 100) / 100.0 * mouth
-            x0 = cx + math.cos(ang) * rr
-            y0 = cy + math.sin(ang) * rr
-            t = (f * step + ((h >> 12) % 97) / 97.0) % 1.0  # 飞行进度循环
-            spread = 30 + 16 * t        # 径向飞行距离
-            ux = math.cos(ang)
-            uy = math.sin(ang) * 0.55
-            x = x0 + ux * spread
-            y = y0 + uy * spread + 26 * t * t              # 重力下坠弧线
-            env = math.sin(math.pi * t)                    # 淡入→淡出
-            r = 2.2 + 6.0 * t + speed * 0.35               # 越飘越近越大
-            ring_a = int(95 + 70 * env)
-            fill_a = int(ring_a * 0.22)
-            hi_a = int(ring_a * 0.7)
-            d.ellipse([x - r, y - r, x + r, y + r],
-                      outline=(222, 238, 248, ring_a), width=1)
-            d.ellipse([x - r + 1, y - r + 1, x + r - 1, y + r - 1],
-                      fill=(216, 236, 248, fill_a))
-            hr = r * 0.3
-            d.ellipse([x - r * 0.45 - hr, y - r * 0.55 - hr,
-                       x - r * 0.45 + hr, y - r * 0.55 + hr],
-                      fill=(255, 255, 255, hi_a))
-        return layer
-
     # ------------------------------------------------------------- 合成
     def compose(self, spin_deg: float, yaw_deg: float, on: bool,
                 speed: int = 0) -> Image.Image:
@@ -324,10 +276,6 @@ class ModernFanArt:
         dest_x = HEAD_CX - hw // 2 + int(xoff)
         dest_y = HEAD_CY - hh // 2
         img.alpha_composite(head, dest=(dest_x, dest_y))
-
-        # 气泡动效：开机时从扇叶正面喷出（迎着用户），数量与流速随风速。
-        if on:
-            img.alpha_composite(self._build_bubbles(speed, yaw_deg))
 
         # 边缘羽化：对 alpha 通道做小半径高斯模糊，风扇外轮廓形成
         # 3~5px 的透明渐变过渡带，消除硬边、提升与桌面的融合度。
