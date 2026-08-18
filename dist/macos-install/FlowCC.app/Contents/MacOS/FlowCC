@@ -1,0 +1,40 @@
+#!/bin/bash
+# FlowCC macOS launcher - finds Python 3, ensures deps, runs the app.
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RESOURCES="$APP_DIR/Resources"
+export PYTHONPATH="$RESOURCES:$PYTHONPATH"
+
+# --- Locate best available Python 3 ---
+PYTHON3=""
+for candidate in \
+    /opt/homebrew/bin/python3 \
+    /usr/local/bin/python3 \
+    /usr/bin/python3 \
+    "$(command -v python3 2>/dev/null)"; do
+    if [ -x "$candidate" ]; then
+        ver=$("$candidate" -c 'import sys; print(sys.version_info >= (3, 8))' 2>/dev/null || echo "False")
+        if [ "$ver" = "True" ]; then
+            PYTHON3="$candidate"
+            break
+        fi
+    fi
+done
+
+if [ -z "$PYTHON3" ]; then
+    osascript -e 'display dialog "FlowCC 需要 Python 3.8+，请从 python.org 下载安装。" with title "FlowCC" buttons {"确定"} default button 1 with icon stop' 2>/dev/null
+    echo "ERROR: Python 3.8+ not found." >&2
+    exit 1
+fi
+
+# --- Ensure pyserial is available ---
+if ! "$PYTHON3" -c "import serial" 2>/dev/null; then
+    echo "Installing pyserial..."
+    "$PYTHON3" -m pip install --user --quiet pyserial 2>/dev/null || \
+    "$PYTHON3" -m pip install --quiet pyserial 2>/dev/null || true
+fi
+
+# --- Launch ---
+export PYTHONUNBUFFERED=1
+exec "$PYTHON3" -B -m flowcc "$@"

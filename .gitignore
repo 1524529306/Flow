@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
-dist/
+dist/*
+!dist/macos-install/
 build/
 *.spec
 release/
